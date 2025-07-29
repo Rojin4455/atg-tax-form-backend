@@ -7,5 +7,4 @@ urlpatterns = [
     path("auth/tokens/", tokens, name="oauth_tokens"),
     path("auth/callback/", callback, name="oauth_callback"),
 
-
 ]
