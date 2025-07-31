@@ -75,8 +75,8 @@ CORS_ALLOWED_ORIGINS = [
     "https://app.jvdealhub.com",
     "http://18.220.10.140",
     "http://18.191.83.115",
-    "http://3.144.148.57"
-    'https://main.d105x1k2m8q5hv.amplifyapp.com'
+    "http://3.144.148.57",
+    'https://main.d105x1k2m8q5hv.amplifyapp.com',
 ]
 
 CSRF_TRUSTED_ORIGINS = [
@@ -85,7 +85,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://18.220.10.140",
     "http://18.191.83.115",
     "http://3.144.148.57",
-    "https://main.d105x1k2m8q5hv.amplifyapp.com"
+    "https://main.d105x1k2m8q5hv.amplifyapp.com",
 ]
 
 REST_FRAMEWORK = {
