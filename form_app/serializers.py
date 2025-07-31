@@ -72,12 +72,16 @@ class TaxFormSubmissionCreateSerializer(serializers.Serializer):
     formType = serializers.CharField()
     submissionDate = serializers.DateTimeField()
     sections = serializers.DictField()
+    status = serializers.CharField()
     
     def create(self, validated_data):
         """Create tax form submission with all related data"""
         form_type_name = validated_data['formType']
         submission_date = validated_data['submissionDate']
         sections_data = validated_data['sections']
+        print("validated data: ", validated_data.keys())
+        status = validated_data['status']
+
         
         with transaction.atomic():
             # Get or create form type
@@ -90,7 +94,7 @@ class TaxFormSubmissionCreateSerializer(serializers.Serializer):
             submission = TaxFormSubmission.objects.create(
                 form_type=form_type,
                 submission_date=submission_date,
-                status='submitted',
+                status=status if status else 'submitted',
                 user=self.context.get('request').user if self.context.get('request') else None
             )
             

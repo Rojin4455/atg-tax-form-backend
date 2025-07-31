@@ -70,6 +70,7 @@ class TaxFormSubmissionViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """Create a new tax form submission"""
         serializer = self.get_serializer(data=request.data)
+        
         serializer.is_valid(raise_exception=True)
         
         # Add client information to context
@@ -203,6 +204,27 @@ class TaxFormSubmissionViewSet(viewsets.ModelViewSet):
             stats['by_form_type'][form_type.display_name] = count
         
         return Response(stats)
+    
+
+    @action(detail=False, methods=['get'], url_path='user-forms')
+    def list_user_forms(self, request):
+        """List all form submissions (personal and business) for the current user with basic details"""
+        queryset = self.get_queryset().only(
+            'id', 'form_type__display_name', 'status', 'submission_date', 'created_at'
+        ).select_related('form_type')
+
+        results = [
+            {
+                'id': submission.id,
+                'form_type': submission.form_type.display_name,
+                'status': submission.get_status_display(),
+                'submission_date': submission.submission_date,
+                'created_at': submission.created_at,
+            }
+            for submission in queryset
+        ]
+
+        return Response(results)
     
     def update(self, request, *args, **kwargs):
         """Update entire tax form submission"""
