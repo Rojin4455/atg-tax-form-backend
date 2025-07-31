@@ -72,19 +72,13 @@ CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8080",
-    "https://app.jvdealhub.com",
-    "http://18.220.10.140",
-    "http://18.191.83.115",
-    "http://3.144.148.57",
+     "http://13.60.188.253",
     'https://main.d105x1k2m8q5hv.amplifyapp.com',
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8080",
-    "https://app.jvdealhub.com",
-    "http://18.220.10.140",
-    "http://18.191.83.115",
-    "http://3.144.148.57",
+    "http://13.60.188.253",
     "https://main.d105x1k2m8q5hv.amplifyapp.com",
 ]
 
