@@ -5,6 +5,7 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from io import BytesIO
 import json
+from form_app.views import decrypt_value
 
 
 class PDFGenerator:
@@ -116,7 +117,7 @@ class PDFGenerator:
                 
                 sections_data[section_key]['questions'].append({
                     'question': answer.question.question_text,
-                    'answer': str(value) if value is not None else 'Not provided'
+                    'answer': decrypt_value(str(value))
                 })
         
         # Add sections to PDF

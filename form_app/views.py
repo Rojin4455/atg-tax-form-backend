@@ -863,6 +863,8 @@ def get_tokens_for_user(user):
     }
 
 
+from accounts.models import GHLAuthCredentials
+import requests
 class UserSignupView(generics.CreateAPIView):
     """User registration endpoint"""
     queryset = User.objects.all()
@@ -873,9 +875,43 @@ class UserSignupView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        
         tokens = get_tokens_for_user(user)
-        
+
+        token = GHLAuthCredentials.objects.get(location_id='3zdgsEJTjNPONjCuEzbx')
+
+        # --- GHL Integration ---
+        ghl_token = token.access_token  # Ideally from env or settings
+        location_id = token.location_id
+        headers = {
+            'Authorization': f'Bearer {ghl_token}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Version': '2021-07-28',
+        }
+
+        # 1. Search if contact exists
+        search_url = f"https://services.leadconnectorhq.com/contacts/?locationId={location_id}&query={user.email}"
+        response = requests.get(search_url, headers=headers)
+
+        print("response: ", response)
+
+        if response.status_code == 200 and response.json().get("contacts"):
+            # Contact exists — Update it
+            contact_id = response.json()["contacts"][0]["id"]
+            update_url = f"https://services.leadconnectorhq.com/contacts/{contact_id}"
+            update_data = {
+                "email": user.email,
+            }
+            requests.put(update_url, json=update_data, headers=headers)
+        else:
+            # Contact does not exist — Create it
+            create_url = "https://services.leadconnectorhq.com/contacts/"
+            create_data = {
+                "email": user.email,
+                "locationId": location_id,
+            }
+            requests.post(create_url, json=create_data, headers=headers)
+
         return Response({
             'message': 'User created successfully',
             'user': {
@@ -887,6 +923,7 @@ class UserSignupView(generics.CreateAPIView):
             },
             'tokens': tokens
         }, status=status.HTTP_201_CREATED)
+
 
 
 class UserLoginView(generics.GenericAPIView):
