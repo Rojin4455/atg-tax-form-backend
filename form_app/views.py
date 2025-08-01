@@ -118,12 +118,24 @@ class TaxFormSubmissionViewSet(viewsets.ModelViewSet):
         for answer in submission.answers.select_related('question__section'):
             section_key = answer.question.section.section_key
             if section_key in sections_data:
+                field_type = answer.question.field_type
+                is_sensitive = answer.question.is_sensitive
+                raw_value = answer.get_value()
+
+                # If it's the specific encrypted field you want to override
+                if answer.question.question_text.strip() == "Business Name":
+                    if field_type == 'encrypted':
+                        raw_value = decrypt_value(raw_value)
+                        field_type = 'text'
+                        is_sensitive = False
+
                 sections_data[section_key]['questions'].append({
                     'question': answer.question.question_text,
-                    'answer': answer.get_value(),
-                    'field_type': answer.question.field_type,
-                    'is_sensitive': answer.question.is_sensitive
+                    'answer': raw_value,
+                    'field_type': field_type,
+                    'is_sensitive': is_sensitive
                 })
+
         
         # Sort sections by order and add to response
         sorted_sections = sorted(sections_data.items(), key=lambda x: x[1]['order'])
@@ -918,3 +930,12 @@ class UserLogoutView(generics.GenericAPIView):
             'message': 'Successfully logged out'
         }, status=status.HTTP_200_OK)
     
+
+from cryptography.fernet import Fernet
+
+def decrypt_value(encrypted_text):
+    try:
+        cipher = Fernet(settings.ENCRYPTION_KEY.encode())
+        return cipher.decrypt(encrypted_text.encode()).decode()
+    except:
+        return encrypted_text
