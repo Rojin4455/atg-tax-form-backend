@@ -70,7 +70,6 @@ class TaxFormSubmissionViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """Create a new tax form submission"""
         serializer = self.get_serializer(data=request.data)
-        
         serializer.is_valid(raise_exception=True)
         
         # Add client information to context

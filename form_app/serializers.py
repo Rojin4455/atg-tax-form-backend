@@ -9,6 +9,17 @@ from .models import (
 )
 
 
+from rest_framework import serializers
+from django.db import transaction
+from django.utils.dateparse import parse_datetime
+import json
+from .models import (
+    TaxFormSubmission, FormType, FormSection, FormQuestion, 
+    FormAnswer, FormSectionData, DependentInfo, BusinessOwnerInfo,
+    VehicleInfo, CharitableContribution, FormAuditLog
+)
+
+
 class DependentInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = DependentInfo
@@ -72,16 +83,12 @@ class TaxFormSubmissionCreateSerializer(serializers.Serializer):
     formType = serializers.CharField()
     submissionDate = serializers.DateTimeField()
     sections = serializers.DictField()
-    status = serializers.CharField()
     
     def create(self, validated_data):
         """Create tax form submission with all related data"""
         form_type_name = validated_data['formType']
         submission_date = validated_data['submissionDate']
         sections_data = validated_data['sections']
-        print("validated data: ", validated_data.keys())
-        status = validated_data['status']
-
         
         with transaction.atomic():
             # Get or create form type
@@ -94,7 +101,7 @@ class TaxFormSubmissionCreateSerializer(serializers.Serializer):
             submission = TaxFormSubmission.objects.create(
                 form_type=form_type,
                 submission_date=submission_date,
-                status=status if status else 'submitted',
+                status='submitted',
                 user=self.context.get('request').user if self.context.get('request') else None
             )
             
@@ -184,14 +191,20 @@ class TaxFormSubmissionCreateSerializer(serializers.Serializer):
     
     def _determine_field_type(self, question_key, answer):
         """Determine the appropriate field type based on question key and answer"""
-        sensitive_fields = ['ssn', 'taxpayerSignature', 'spouseSignature']
-        boolean_fields = ['hasSpouse', 'taxpayerBlind', 'isFullTimeStudent', 'firstYear']
-        date_fields = ['dateOfBirth', 'submissionDate', 'startDate', 'datePlacedInService']
-        number_fields = ['monthsLivedWithYou', 'childCareExpense', 'ownershipPercentage']
-        json_fields = ['dependents', 'owners', 'vehicles', 'charitableOrganizations', 'otherExpenses']
+        # Only these specific fields should be encrypted (sensitive personal data)
+        sensitive_fields = ['ssn', 'spousessn', 'ein']  # Removed business name related fields
+        signature_fields = ['taxpayersignature', 'spousesignature', 'signature']
         
+        boolean_fields = ['hasSpouse', 'taxpayerBlind', 'isFullTimeStudent', 'firstYear', 'hasHomeOffice']
+        date_fields = ['dateOfBirth', 'submissionDate', 'startDate', 'datePlacedInService', 'spouseDeathDate']
+        number_fields = ['monthsLivedWithYou', 'childCareExpense', 'ownershipPercentage', 'grossReceipts', 'totalMiles']
+        json_fields = ['dependents', 'owners', 'vehicles', 'charitableOrganizations', 'otherExpenses', 'businessDescriptions', 'entityTypes']
+        
+        # Check for encrypted fields (only specific sensitive personal data)
         if any(field in question_key.lower() for field in sensitive_fields):
             return 'encrypted'
+        elif any(field in question_key.lower() for field in signature_fields):
+            return 'signature'
         elif question_key in boolean_fields or str(answer).lower() in ['yes', 'no', 'true', 'false']:
             return 'boolean'
         elif question_key in date_fields or 'date' in question_key.lower():
@@ -200,15 +213,21 @@ class TaxFormSubmissionCreateSerializer(serializers.Serializer):
             return 'number'
         elif question_key in json_fields or isinstance(answer, (list, dict)):
             return 'json'
-        elif 'signature' in question_key.lower():
-            return 'signature'
         else:
             return 'text'
     
     def _is_sensitive_field(self, question_key):
-        """Check if field contains sensitive data"""
-        sensitive_keywords = ['ssn', 'signature', 'ein']
-        return any(keyword in question_key.lower() for keyword in sensitive_keywords)
+        """Check if field contains sensitive data that needs encryption"""
+        # Only these specific fields contain sensitive personal/financial data
+        sensitive_keywords = [
+            'ssn',           # Social Security Numbers
+            'spousessn',     # Spouse SSN
+            'ein',           # Employer Identification Number (business tax ID)
+            'signature'      # Digital signatures
+        ]
+        
+        question_lower = question_key.lower()
+        return any(keyword in question_lower for keyword in sensitive_keywords)
     
     def _process_dependents(self, submission, questions_data):
         """Process dependents data into separate model"""
