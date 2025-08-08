@@ -26,7 +26,7 @@ from .serializers import (
     UserProfileSerializer,
     UserLogoutSerializer
 )
-from .utils import get_client_ip
+from .utils import get_client_ip,create_or_update_user_profile
 import logging
 from django.core.cache import cache
 
@@ -895,12 +895,19 @@ class UserSignupView(generics.CreateAPIView):
 
         print("response: ", response)
 
+        ghl_contact_id = None  # placeholder
+
         if response.status_code == 200 and response.json().get("contacts"):
             # Contact exists — Update it
             contact_id = response.json()["contacts"][0]["id"]
+            ghl_contact_id = contact_id
             update_url = f"https://services.leadconnectorhq.com/contacts/{contact_id}"
             update_data = {
                 "email": user.email,
+                "customFields": [
+                    {"id": "QmI5yIMWYdY17ijOr4ta", "field_value": user.username},
+                    {"id": "nBDNBPX0gUFz7wqfTj51", "field_value": request.data.get("password")}
+                ],
             }
             requests.put(update_url, json=update_data, headers=headers)
         else:
@@ -909,8 +916,21 @@ class UserSignupView(generics.CreateAPIView):
             create_data = {
                 "email": user.email,
                 "locationId": location_id,
+                "customFields": [
+                    {"id": "QmI5yIMWYdY17ijOr4ta", "field_value": user.username},
+                    {"id": "nBDNBPX0gUFz7wqfTj51", "field_value": request.data.get("password")}
+                ],
             }
-            requests.post(create_url, json=create_data, headers=headers)
+            create_res = requests.post(create_url, json=create_data, headers=headers)
+            print("FFF:", create_res.json())
+
+            if create_res.status_code in (200, 201):
+                ghl_contact_id = create_res.json().get("contact").get("id")
+
+        # Temporarily attach the ghl_contact_id to the user instance
+        user._ghl_contact_id = ghl_contact_id
+
+        create_or_update_user_profile(user)
 
         return Response({
             'message': 'User created successfully',

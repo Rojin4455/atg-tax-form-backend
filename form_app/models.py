@@ -343,3 +343,13 @@ class FormAuditLog(models.Model):
     
     def __str__(self):
         return f"{self.submission.id} - {self.action} - {self.timestamp}"
+    
+
+
+
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    ghl_contact_id = models.CharField(max_length=55, blank=True, null=True)
+    rental_form_url = models.URLField(blank=True, null=True)
+    business_form_url = models.URLField(blank=True, null=True)
+    personal_form_url = models.URLField(blank=True, null=True)

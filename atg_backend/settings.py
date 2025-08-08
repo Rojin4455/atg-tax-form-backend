@@ -52,6 +52,7 @@ INSTALLED_APPS = [
 
     'accounts',
     'form_app',
+    'survey_app',
 ]
 
 MIDDLEWARE = [
@@ -74,12 +75,14 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8080",
      "http://13.60.188.253",
     'https://main.d105x1k2m8q5hv.amplifyapp.com',
+    'https://preview--organizer-ui-kit.lovable.app',
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8080",
     "http://13.60.188.253",
     "https://main.d105x1k2m8q5hv.amplifyapp.com",
+    "https://preview--organizer-ui-kit.lovable.app",
 ]
 
 REST_FRAMEWORK = {
@@ -95,8 +98,8 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=6),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=12),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': False,
@@ -122,8 +125,8 @@ SIMPLE_JWT = {
     'JTI_CLAIM': 'jti',
 
     'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
-    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
-    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
+    'SLIDING_TOKEN_LIFETIME': timedelta(days=5),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=12),
 }
 
 TEMPLATES = [
