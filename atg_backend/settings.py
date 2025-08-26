@@ -33,7 +33,7 @@ SECRET_KEY = config("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['51.20.18.110', "localhost", "127.0.0.1","13.60.188.253"]
+ALLOWED_HOSTS = ['51.20.18.110', "localhost", "127.0.0.1","13.60.188.253",'organizers.advancedtaxgroup.com']
 
 
 # Application definition
@@ -76,6 +76,7 @@ CORS_ALLOWED_ORIGINS = [
      "http://13.60.188.253",
     'https://main.d105x1k2m8q5hv.amplifyapp.com',
     'https://preview--organizer-ui-kit.lovable.app',
+    'https://organizers.advancedtaxgroup.com',
 ]
 
 CSRF_TRUSTED_ORIGINS = [
@@ -83,6 +84,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://13.60.188.253",
     "https://main.d105x1k2m8q5hv.amplifyapp.com",
     "https://preview--organizer-ui-kit.lovable.app",
+    'https://organizers.advancedtaxgroup.com',
 ]
 
 REST_FRAMEWORK = {
