@@ -65,7 +65,6 @@ def update_ghl_contact_tags_and_links(user, form_type, status, form_id, pdf_data
             "business": "WUfba2ft47FUmB5nLIbJ",
             "rental": "QCyDdzWXmNtUJ4gauM2f"
         }
-
         FORM_PDF_FIELD_IDS = {
             "personal": "0KNK08rbVnK3VOgN0QMw",
             "business": "vMAxcikxmYHhEqUX7Q0J",  # Update when created

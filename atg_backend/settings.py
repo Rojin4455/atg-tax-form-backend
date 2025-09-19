@@ -33,7 +33,7 @@ SECRET_KEY = config("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['51.20.18.110', "localhost", "127.0.0.1","13.60.188.253",'organizers.advancedtaxgroup.com']
+ALLOWED_HOSTS = ['51.20.18.110', "localhost", "127.0.0.1","13.60.188.253",'organizers.advancedtaxgroup.com','tools.advancedtaxgroup.com']
 
 
 # Application definition
@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'accounts',
     'form_app',
     'survey_app',
+    'tracker_app',
 ]
 
 MIDDLEWARE = [
@@ -77,6 +78,7 @@ CORS_ALLOWED_ORIGINS = [
     'https://main.d105x1k2m8q5hv.amplifyapp.com',
     'https://preview--organizer-ui-kit.lovable.app',
     'https://organizers.advancedtaxgroup.com',
+    'https://tools.advancedtaxgroup.com',
 ]
 
 CSRF_TRUSTED_ORIGINS = [
@@ -85,6 +87,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://main.d105x1k2m8q5hv.amplifyapp.com",
     "https://preview--organizer-ui-kit.lovable.app",
     'https://organizers.advancedtaxgroup.com',
+    'https://tools.advancedtaxgroup.com',
 ]
 
 REST_FRAMEWORK = {
@@ -237,25 +240,25 @@ CELERY_BEAT_SCHEDULE = {
 
 
 
-CELERY_TASK_ROUTES = {
-    'form_app.tasks.process_submission_async': {'queue': 'submissions'},
-    'form_app.tasks.create_audit_log_async': {'queue': 'audit'},
-    'form_app.tasks.generate_pdf_async': {'queue': 'heavy'},
-}
+# CELERY_TASK_ROUTES = {
+#     'form_app.tasks.process_submission_async': {'queue': 'submissions'},
+#     'form_app.tasks.create_audit_log_async': {'queue': 'audit'},
+#     'form_app.tasks.generate_pdf_async': {'queue': 'heavy'},
+# }
 
-CACHES = {
-    'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': 'redis://127.0.0.1:6379/1',
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-            'SERIALIZER': 'django_redis.serializers.json.JSONSerializer',
-            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
-        },
-        'KEY_PREFIX': 'taxform',
-        'TIMEOUT': 300,  # 5 minutes default
-    }
-}
+# CACHES = {
+#     'default': {
+#         'BACKEND': 'django_redis.cache.RedisCache',
+#         'LOCATION': 'redis://127.0.0.1:6379/1',
+#         'OPTIONS': {
+#             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+#             'SERIALIZER': 'django_redis.serializers.json.JSONSerializer',
+#             'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+#         },
+#         'KEY_PREFIX': 'taxform',
+#         'TIMEOUT': 300,  # 5 minutes default
+#     }
+# }
 
 
 
