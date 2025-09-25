@@ -9,7 +9,7 @@ from django.core.files.base import ContentFile
 from tempfile import NamedTemporaryFile
 import os
 
-def update_ghl_contact_tags_and_links(user, form_type, status, form_id, pdf_data=None):
+def update_ghl_contact_tags_and_links(user, form_type=None, status=None, form_id=None, pdf_data=None, is_tracker=False, tracker_tag=""):
     try:
         print(f"[DEBUG] Starting GHL update for user={user}, form_type={form_type}, status={status}, form_id={form_id}")
         print(f"[DEBUG] PDF data provided: {bool(pdf_data)}")
@@ -49,11 +49,18 @@ def update_ghl_contact_tags_and_links(user, form_type, status, form_id, pdf_data
         existing_tags = contact_data.get("contact", {}).get("tags", [])
         print(f"[DEBUG] Existing tags: {existing_tags}")
 
+
+
         # --- Step 2: Remove old tag of same form type ---
         prefix = f"{form_type}_form_"
         updated_tags = [t for t in existing_tags if not t.startswith(prefix)]
 
         # --- Step 3: Add new tag ---
+
+        if is_tracker:
+            update_ghl_contact_for_tracker(ghl_contact_id, updated_tags, tracker_tag,headers)
+            return
+
         new_tag = f"{form_type}_form_{status}"
         if new_tag not in updated_tags:
             updated_tags.append(new_tag)
@@ -212,3 +219,25 @@ def update_ghl_contact_tags_and_links(user, form_type, status, form_id, pdf_data
         print(f"[ERROR] Full traceback: {traceback.format_exc()}")
 
 
+
+
+
+def update_ghl_contact_for_tracker(ghl_contact_id,updated_tags,tracker_tag,headers):
+    if tracker_tag and tracker_tag not in updated_tags:
+        new_tags = [x for x in updated_tags if "tracker" not in x]
+        new_tags.append(tracker_tag)
+        
+    else:
+        return
+    
+    update_payload = {
+        "tags": new_tags
+    }
+        
+    update_resp = requests.put(
+        f"https://services.leadconnectorhq.com/contacts/{ghl_contact_id}",
+        json=update_payload,
+        headers={**headers, "Content-Type": "application/json"}
+    )
+
+    print("tracker tag is added")
