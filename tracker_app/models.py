@@ -5,8 +5,7 @@ from django.contrib.auth.models import User
 
 class UserFinanceData(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="finance_data")
-    income = models.JSONField(default=list)   # Store income array directly
-    expenses = models.JSONField(default=list) # Store expenses array directly
+    finance_data = models.JSONField(default=dict)  # Will store full JSON {businessTabs, activeTabId}
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
