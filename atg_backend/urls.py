@@ -23,4 +23,5 @@ urlpatterns = [
     path('api/survey/', include("survey_app.urls")),
     path('api/form/', include("form_app.urls")),
     path('api/tracker/', include("tracker_app.urls")),
+    path('api/questionnaire/', include("questionnaire_app.urls")),
 ]

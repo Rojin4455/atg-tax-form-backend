@@ -33,7 +33,7 @@ SECRET_KEY = config("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['51.20.18.110', "localhost", "127.0.0.1","13.60.188.253",'organizers.advancedtaxgroup.com','tools.advancedtaxgroup.com']
+ALLOWED_HOSTS = ['51.20.18.110', "localhost", "127.0.0.1","13.60.188.253",'organizers.advancedtaxgroup.com','tools.advancedtaxgroup.com','13.53.249.49','questionnaire.advancedtaxgroup.com']
 
 
 # Application definition
@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'form_app',
     'survey_app',
     'tracker_app',
+    'questionnaire_app',
 ]
 
 MIDDLEWARE = [
@@ -79,6 +80,8 @@ CORS_ALLOWED_ORIGINS = [
     'https://preview--organizer-ui-kit.lovable.app',
     'https://organizers.advancedtaxgroup.com',
     'https://tools.advancedtaxgroup.com',
+    'https://questionnaire.advancedtaxgroup.com',
+    'http://13.53.249.49',
 ]
 
 CSRF_TRUSTED_ORIGINS = [
@@ -88,6 +91,8 @@ CSRF_TRUSTED_ORIGINS = [
     "https://preview--organizer-ui-kit.lovable.app",
     'https://organizers.advancedtaxgroup.com',
     'https://tools.advancedtaxgroup.com',
+    'https://questionnaire.advancedtaxgroup.com',
+    'http://13.53.249.49',
 ]
 
 REST_FRAMEWORK = {
