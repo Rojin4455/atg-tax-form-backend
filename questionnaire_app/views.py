@@ -64,7 +64,6 @@ class GHLCreateOrUpdateContactView(APIView):
                 "email": email,
                 "name": username,
                 "phone": phone,
-                "locationId": location_id,
                 "tags": all_tags,
             }
 
