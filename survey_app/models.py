@@ -17,6 +17,7 @@ class SurveySubmission(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     form_type = models.CharField(max_length=20, choices=FORM_TYPES)
+    form_name = models.CharField(max_length=50, null=True, blank=True)
     status = models.CharField(max_length=20, choices=FORM_TYPES, default="drafted")
     submission_data = models.JSONField()
     submitted_at = models.DateTimeField(auto_now_add=True)

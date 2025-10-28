@@ -20,6 +20,7 @@ class SurveySubmissionCreateView(APIView):
             
             # Extract data (DRF parsers handle both JSON and multipart automatically)
             form_type = request.data.get("form_type")
+            form_name = request.data.get("form_name")
             form_status = request.data.get("status", "drafted")
             pdf_data = request.data.get("pdf_data")
             
@@ -48,6 +49,7 @@ class SurveySubmissionCreateView(APIView):
             submission = SurveySubmission.objects.create(
                 user=request.user,
                 form_type=form_type,
+                form_name=form_name,
                 status=form_status,
                 submission_data=submission_data
             )
@@ -98,6 +100,7 @@ class SurveySubmissionDetailView(APIView):
         if request.content_type.startswith('multipart/form-data'):
             # Extract form data from multipart request
             form_type = request.data.get("form_type", submission.form_type)
+            form_name = request.data.get("form_name", submission.form_name)
             form_status = request.data.get("status", submission.status)
             pdf_data = request.data.get("pdf_data")
             
@@ -116,17 +119,21 @@ class SurveySubmissionDetailView(APIView):
             # Add form_type and status to submission_data
             submission_data['form_type'] = form_type
             submission_data['status'] = form_status
+            submission_data['form_name'] = form_name
             
         else:
             # Handle regular JSON request
             form_type = request.data.get("form_type", submission.form_type)
             form_status = request.data.get("status", submission.status)
+            form_name = request.data.get("form_name", submission.form_name)
+            
             pdf_data = request.data.get("pdf_data")
             submission_data = request.data
         
         # Update submission
         submission.form_type = form_type
         submission.status = form_status
+        submission.form_name=form_name
         submission.submission_data = submission_data
         submission.save()
         
@@ -140,6 +147,25 @@ class SurveySubmissionDetailView(APIView):
         )
         
         return Response({"message": "Submission updated"}, status=status.HTTP_200_OK)
+    
+
+    def delete(self, request, id):
+        form_type = request.query_params.get("type")
+        if not form_type:
+            return Response({"error": "Missing query param: type"}, status=status.HTTP_400_BAD_REQUEST)
+
+        submission = get_object_or_404(
+            SurveySubmission,
+            id=id,
+            form_type=form_type,
+            user=request.user
+        )
+
+        submission.delete()
+        return Response(
+            {"message": "Form submission deleted successfully."},
+            status=status.HTTP_200_OK
+        )
 
 
 class SurveySubmissionListView(APIView):
@@ -147,5 +173,24 @@ class SurveySubmissionListView(APIView):
 
     def get(self, request):
         submissions = SurveySubmission.objects.filter(user=request.user).order_by('-submitted_at')
+        serializer = SurveySubmissionListSerializer(submissions, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+
+class FormSubmissionsListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Get optional form_type from query params
+        form_type = request.GET.get("form_type", None)
+
+        # Filter submissions by user
+        submissions = SurveySubmission.objects.filter(user=request.user)
+
+        # If form_type is provided, filter further
+        if form_type in dict(SurveySubmission.FORM_TYPES).keys():
+            submissions = submissions.filter(form_type=form_type)
+            # submissions.delete()
+        submissions = submissions.order_by('-submitted_at')
         serializer = SurveySubmissionListSerializer(submissions, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
