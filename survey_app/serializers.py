@@ -23,3 +23,11 @@ class SurveySubmissionListSerializer(serializers.ModelSerializer):
         model = SurveySubmission
         fields = ['id', 'form_type', 'status', 'submitted_at', 'form_name']
 
+
+from .models import TaxEngagementLetter
+
+class TaxEngagementLetterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaxEngagementLetter
+        fields = ['id', 'user', 'taxpayer_name', 'signature', 'date_signed', 'created_at', 'updated_at']
+        read_only_fields = ['user', 'created_at', 'updated_at']

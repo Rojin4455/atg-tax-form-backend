@@ -219,7 +219,241 @@ def update_ghl_contact_tags_and_links(user, form_type=None, status=None, form_id
         print(f"[ERROR] Full traceback: {traceback.format_exc()}")
 
 
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+import io
+import uuid
+import textwrap
+import requests
 
+from django.core.files.base import ContentFile
+from reportlab.lib.utils import ImageReader
+
+
+
+def upload_tax_engagement_pdf_to_ghl(user, pdf_data):
+    print("[TAX_PDF] Starting PDF upload process...")
+
+    try:
+        if not pdf_data:
+            print("[TAX_PDF] No PDF data provided")
+            return
+
+        # Fetch GHL Contact ID
+        try:
+            profile = UserProfile.objects.get(user=user)
+            ghl_contact_id = profile.ghl_contact_id
+        except UserProfile.DoesNotExist:
+            print("[TAX_PDF] UserProfile not found")
+            return
+
+        if not ghl_contact_id:
+            print("[TAX_PDF] No GHL contact ID found")
+            return
+
+        creds = GHLAuthCredentials.objects.first()
+        if not creds:
+            print("[TAX_PDF] Missing GHL Credentials")
+            return
+
+        ghl_token = creds.access_token
+        headers = {
+            "Authorization": f"Bearer {ghl_token}",
+            "Accept": "application/json",
+            "Version": "2021-07-28",
+        }
+
+        # ---------------------------------------------------
+        # STEP 1 — Generate PDF
+        # ---------------------------------------------------
+        pdf_buffer = io.BytesIO()
+        c = canvas.Canvas(pdf_buffer, pagesize=letter)
+        width, height = letter
+
+        y = height - 50
+
+        def check_page_break():
+            nonlocal y
+            if y < 80:
+                c.showPage()
+                c.setFont("Helvetica", 12)
+                y = height - 50
+
+        # Title
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(50, y, pdf_data.get("document_title", "Engagement Letter"))
+        y -= 40
+        check_page_break()
+
+        # Taxpayer Name
+        c.setFont("Helvetica", 12)
+        c.drawString(50, y, f"Taxpayer Name: {pdf_data.get('taxpayer_name')}")
+        y -= 25
+        check_page_break()
+
+        # Date
+        c.drawString(50, y, f"Date Signed: {pdf_data.get('date_signed')}")
+        y -= 40
+        check_page_break()
+
+        # Letter Content
+        letter_content = pdf_data.get("letter_content", {})
+
+        # Greeting
+        greeting = letter_content.get("greeting", "")
+        if greeting:
+            c.drawString(50, y, greeting)
+            y -= 25
+            check_page_break()
+
+        # Intro
+        intro = letter_content.get("intro", "")
+        if intro:
+            wrapped_intro = textwrap.wrap(intro, width=90)
+            for line in wrapped_intro:
+                c.drawString(50, y, line)
+                y -= 18
+                check_page_break()
+            y -= 10
+            check_page_break()
+
+        # Sections
+        for section in letter_content.get("sections", []):
+            text = f"{section['number']}. {section['text']}"
+            wrapped = textwrap.wrap(text, width=90)
+            for line in wrapped:
+                c.drawString(50, y, line)
+                y -= 18
+                check_page_break()
+
+            y -= 12
+            check_page_break()
+
+        # Agreement footer
+        agreement = letter_content.get("agreement_statement", "")
+        if agreement:
+            wrapped = textwrap.wrap(agreement, width=90)
+            for line in wrapped:
+                c.drawString(50, y, line)
+                y -= 18
+                check_page_break()
+
+        # ---------------------------------------------------
+        # STEP 1.5 — Insert Signature (BASE64)
+        # ---------------------------------------------------
+        signature_base64 = pdf_data.get("signature_data")
+
+        if signature_base64:
+            try:
+                # Strip prefix if exists
+                if "," in signature_base64:
+                    signature_base64 = signature_base64.split(",")[1]
+
+                sig_bytes = base64.b64decode(signature_base64)
+                sig_buffer = io.BytesIO(sig_bytes)
+                signature_img = ImageReader(sig_buffer)
+
+                # Reserve some space for signature
+                if y < 160:
+                    c.showPage()
+                    y = height - 100
+
+                c.setFont("Helvetica-Bold", 12)
+                c.drawString(50, y, "Signature:")
+                y -= 20
+
+                c.drawImage(signature_img, 50, y - 80, width=200, height=80, mask="auto")
+                y -= 120
+
+                print("[TAX_PDF] Signature added successfully")
+            except Exception as sig_err:
+                print("[TAX_PDF] Error adding signature:", sig_err)
+
+        # Finalize PDF
+        c.showPage()
+        c.save()
+        pdf_buffer.seek(0)
+
+        # ---------------------------------------------------
+        # STEP 2 — Upload PDF to GHL
+        # ---------------------------------------------------
+        filename = f"tax_engagement_{uuid.uuid4().hex[:8]}.pdf"
+        print("[TAX_PDF] Uploading PDF to GHL...")
+
+        upload_resp = requests.post(
+            "https://services.leadconnectorhq.com/medias/upload-file",
+            headers=headers,
+            files={"file": (filename, pdf_buffer, "application/pdf")},
+            data={"hosted": "false", "name": filename},
+        )
+
+        print("[TAX_PDF] Upload response:", upload_resp.status_code, upload_resp.text)
+
+        if upload_resp.status_code not in [200, 201]:
+            print("[TAX_PDF] Failed uploading PDF")
+            return
+
+        upload_data = upload_resp.json()
+        file_url = upload_data.get("fileUrl") or upload_data.get("url")
+
+        if not file_url:
+            print("[TAX_PDF] No file URL returned from GHL")
+            return
+
+        print("[TAX_PDF] PDF uploaded successfully:", file_url)
+
+        # ---------------------------------------------------
+        # STEP 3 — Save PDF URL inside GHL Contact
+        # ---------------------------------------------------
+        
+        TAX_ENGAGEMENT_FIELD_ID = "5DevRorPSoZ9N1Nb6R8u"
+        NEW_TAG = "Engagement Letter Signed"
+
+        # 1. GET existing contact to read tags
+        contact_resp = requests.get(
+            f"https://services.leadconnectorhq.com/contacts/{ghl_contact_id}",
+            headers=headers
+        )
+
+        if contact_resp.status_code != 200:
+            print("[TAX_PDF] Failed to fetch existing contact before updating tags")
+            print(contact_resp.text)
+            return
+
+        contact_data = contact_resp.json().get("contact", {})
+        existing_tags = contact_data.get("tags", [])
+
+        # 2. Add new tag only if not present
+        if NEW_TAG not in existing_tags:
+            existing_tags.append(NEW_TAG)
+
+        print("[TAX_PDF] Final tags to update:", existing_tags)
+
+        # 3. Update PDF URL + updated tag list
+        update_payload = {
+            "tags": existing_tags,
+            "customFields": [
+                {"id": TAX_ENGAGEMENT_FIELD_ID, "value": file_url}
+            ]
+        }
+
+        update_resp = requests.put(
+            f"https://services.leadconnectorhq.com/contacts/{ghl_contact_id}",
+            headers={**headers, "Content-Type": "application/json"},
+            json=update_payload,
+        )
+
+        print("[TAX_PDF] Save response:", update_resp.status_code, update_resp.text)
+
+        if update_resp.status_code == 200:
+            print("[TAX_PDF] Tax engagement PDF & tag saved successfully")
+        else:
+            print("[TAX_PDF] Failed saving pdf + tag to GHL field")
+
+    except Exception as e:
+        print("[TAX_PDF] ERROR:", e)
+        import traceback
+        print(traceback.format_exc())
 
 
 def update_ghl_contact_for_tracker(ghl_contact_id,updated_tags,tracker_tag,headers):

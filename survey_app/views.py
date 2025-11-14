@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.parsers import MultiPartParser, JSONParser
 from .models import SurveySubmission
 from .serializers import SurveySubmissionSerializer, SurveySubmissionListSerializer
-from .helpers import update_ghl_contact_tags_and_links
+from .helpers import update_ghl_contact_tags_and_links,upload_tax_engagement_pdf_to_ghl
 
 import json
 class SurveySubmissionCreateView(APIView):
@@ -194,3 +194,46 @@ class FormSubmissionsListView(APIView):
         submissions = submissions.order_by('-submitted_at')
         serializer = SurveySubmissionListSerializer(submissions, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+
+from .models import TaxEngagementLetter
+from .serializers import TaxEngagementLetterSerializer
+from rest_framework import generics
+
+
+class TaxEngagementLetterView(generics.GenericAPIView):
+    serializer_class = TaxEngagementLetterSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Get the current user's existing tax engagement form, if any"""
+        try:
+            letter = TaxEngagementLetter.objects.get(user=request.user)
+            serializer = self.serializer_class(letter)
+            return Response(serializer.data, status=200)
+        except TaxEngagementLetter.DoesNotExist:
+            return Response({"detail": "No existing form found."}, status=404)
+
+    def post(self, request):
+        """Create or update the tax engagement letter for the current user"""
+        serializer = self.serializer_class(data=request.data)
+
+        pdf_data = request.data.get("pdf_data")
+
+        if serializer.is_valid():
+            # Update if exists, else create new
+            obj, created = TaxEngagementLetter.objects.update_or_create(
+                user=request.user,
+                defaults={
+                    'taxpayer_name': serializer.validated_data['taxpayer_name'],
+                    'signature': serializer.validated_data['signature'],
+                    'date_signed': serializer.validated_data['date_signed']
+                }
+            )
+
+            if pdf_data:
+                upload_tax_engagement_pdf_to_ghl(request.user, pdf_data)
+            return Response(self.serializer_class(obj).data, status=201 if created else 200)
+        return Response(serializer.errors, status=400)
