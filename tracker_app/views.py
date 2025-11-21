@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from .models import UserFinanceData
 from .serializers import UserFinanceDataSerializer
-from survey_app.helpers import update_ghl_contact_tags_and_links
+from survey_app.helpers import update_ghl_contact_tags_and_links, add_ghl_contact_tag
 
 class UserFinanceDataView(APIView):
     permission_classes = [IsAuthenticated]
@@ -29,6 +29,8 @@ class UserFinanceDataView(APIView):
             update_ghl_contact_tags_and_links(
                 user=request.user, is_tracker=True, tracker_tag="Tracker Added/Updated"
             )
+            # Add "tax toolbox accessed" tag when user accesses tracker
+            add_ghl_contact_tag(request.user, "tax toolbox accessed")
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

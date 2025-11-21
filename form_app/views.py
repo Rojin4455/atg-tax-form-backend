@@ -27,6 +27,7 @@ from .serializers import (
     UserLogoutSerializer
 )
 from .utils import get_client_ip,create_or_update_user_profile
+from survey_app.helpers import add_ghl_contact_tag
 import logging
 from django.core.cache import cache
 
@@ -81,6 +82,9 @@ class TaxFormSubmissionViewSet(viewsets.ModelViewSet):
         serializer.context.update(context)
         
         submission = serializer.save()
+        
+        # Add "tax toolbox accessed" tag when user submits tax form
+        add_ghl_contact_tag(request.user, "tax toolbox accessed")
         
         # Return detailed response
         response_serializer = TaxFormSubmissionSerializer(submission)
@@ -865,6 +869,7 @@ def get_tokens_for_user(user):
 
 from accounts.models import GHLAuthCredentials
 import requests
+from survey_app.helpers import add_ghl_contact_tag
 class UserSignupView(generics.CreateAPIView):
     """User registration endpoint"""
     queryset = User.objects.all()
@@ -931,6 +936,9 @@ class UserSignupView(generics.CreateAPIView):
         user._ghl_contact_id = ghl_contact_id
 
         create_or_update_user_profile(user)
+
+        # Add "tax toolbox created" tag to GHL contact
+        add_ghl_contact_tag(user, "tax toolbox created")
 
         return Response({
             'message': 'User created successfully',

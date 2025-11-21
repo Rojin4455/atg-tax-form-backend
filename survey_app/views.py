@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.parsers import MultiPartParser, JSONParser
 from .models import SurveySubmission
 from .serializers import SurveySubmissionSerializer, SurveySubmissionListSerializer
-from .helpers import update_ghl_contact_tags_and_links,upload_tax_engagement_pdf_to_ghl
+from .helpers import update_ghl_contact_tags_and_links,upload_tax_engagement_pdf_to_ghl,add_ghl_contact_tag
 
 import json
 class SurveySubmissionCreateView(APIView):
@@ -64,6 +64,9 @@ class SurveySubmissionCreateView(APIView):
                 form_id=submission.id,
                 pdf_data=pdf_data
             )
+            
+            # Add "tax toolbox accessed" tag when user submits tax form
+            add_ghl_contact_tag(request.user, "tax toolbox accessed")
             
             return Response({"id": submission.id}, status=status.HTTP_201_CREATED)
             
@@ -145,6 +148,9 @@ class SurveySubmissionDetailView(APIView):
             form_id=submission.id,
             pdf_data=pdf_data  # Pass the PDF data
         )
+        
+        # Add "tax toolbox accessed" tag when user updates/submits tax form
+        add_ghl_contact_tag(request.user, "tax toolbox accessed")
         
         return Response({"message": "Submission updated"}, status=status.HTTP_200_OK)
     
@@ -235,5 +241,9 @@ class TaxEngagementLetterView(generics.GenericAPIView):
 
             if pdf_data:
                 upload_tax_engagement_pdf_to_ghl(request.user, pdf_data)
+            
+            # Add "tax toolbox accessed" tag when user signs tax engagement letter
+            add_ghl_contact_tag(request.user, "tax toolbox accessed")
+            
             return Response(self.serializer_class(obj).data, status=201 if created else 200)
         return Response(serializer.errors, status=400)

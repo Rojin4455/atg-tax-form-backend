@@ -475,3 +475,84 @@ def update_ghl_contact_for_tracker(ghl_contact_id,updated_tags,tracker_tag,heade
     )
 
     print("tracker tag is added")
+
+
+def add_ghl_contact_tag(user, tag_name):
+    """
+    Add a tag to a GHL contact for a given user.
+    
+    Args:
+        user: Django User instance
+        tag_name: String name of the tag to add (e.g., "tax toolbox created", "tax toolbox accessed")
+    
+    Returns:
+        bool: True if tag was added successfully, False otherwise
+    """
+    try:
+        # Get GHL contact ID from user profile
+        profile = UserProfile.objects.get(user=user)
+        ghl_contact_id = profile.ghl_contact_id
+        
+        if not ghl_contact_id:
+            print(f"[TAG] No GHL contact ID found for user {user.email} — aborting")
+            return False
+
+        # Get GHL API credentials
+        ghl_creds = GHLAuthCredentials.objects.first()
+        if not ghl_creds:
+            print("[TAG] No GHL credentials found — aborting")
+            return False
+
+        ghl_token = ghl_creds.access_token
+        headers = {
+            'Authorization': f'Bearer {ghl_token}',
+            'Accept': 'application/json',
+            'Version': '2021-07-28',
+        }
+
+        # Fetch existing contact to get current tags
+        contact_url = f"https://services.leadconnectorhq.com/contacts/{ghl_contact_id}"
+        resp = requests.get(contact_url, headers=headers)
+        
+        if resp.status_code != 200:
+            print(f"[TAG] Failed to fetch contact — response: {resp.text}")
+            return False
+
+        contact_data = resp.json()
+        existing_tags = contact_data.get("contact", {}).get("tags", [])
+        print(f"[TAG] Existing tags: {existing_tags}")
+
+        # Add tag if it doesn't already exist
+        if tag_name not in existing_tags:
+            existing_tags.append(tag_name)
+            print(f"[TAG] Adding tag: {tag_name}")
+        else:
+            print(f"[TAG] Tag '{tag_name}' already exists, skipping")
+            return True
+
+        # Update contact with new tags
+        update_payload = {
+            "tags": existing_tags
+        }
+        
+        update_resp = requests.put(
+            contact_url,
+            json=update_payload,
+            headers={**headers, "Content-Type": "application/json"}
+        )
+        
+        if update_resp.status_code == 200:
+            print(f"[TAG] Successfully added tag '{tag_name}' to GHL contact")
+            return True
+        else:
+            print(f"[TAG] Failed to update GHL contact: {update_resp.status_code} - {update_resp.text}")
+            return False
+
+    except UserProfile.DoesNotExist:
+        print(f"[TAG] UserProfile not found for user={user} — aborting")
+        return False
+    except Exception as e:
+        print(f"[TAG] Exception in add_ghl_contact_tag: {e}")
+        import traceback
+        print(f"[TAG] Full traceback: {traceback.format_exc()}")
+        return False
