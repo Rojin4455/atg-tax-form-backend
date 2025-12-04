@@ -377,26 +377,33 @@ class UserSignupSerializer(serializers.ModelSerializer):
 
 
 class UserLoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
+    email = serializers.EmailField()
     password = serializers.CharField()
 
     def validate(self, attrs):
-        username = attrs.get('username')
+        email = attrs.get('email')
         password = attrs.get('password')
 
-        if username and password:
-            user = authenticate(username=username, password=password)
-            
-            if not user:
+        if email and password:
+            # Find user by email first
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
                 raise serializers.ValidationError('Invalid credentials.')
             
-            if not user.is_active:
+            # Authenticate using the username (Django's authenticate uses username)
+            authenticated_user = authenticate(username=user.username, password=password)
+            
+            if not authenticated_user:
+                raise serializers.ValidationError('Invalid credentials.')
+            
+            if not authenticated_user.is_active:
                 raise serializers.ValidationError('User account is disabled.')
             
-            attrs['user'] = user
+            attrs['user'] = authenticated_user
             return attrs
         else:
-            raise serializers.ValidationError('Must include username and password.')
+            raise serializers.ValidationError('Must include email and password.')
 
 
 class AdminLoginSerializer(serializers.Serializer):
@@ -444,3 +451,36 @@ class UserLogoutSerializer(serializers.Serializer):
             RefreshToken(self.token).blacklist()
         except Exception as e:
             raise serializers.ValidationError('Invalid token.')
+
+
+class RequestOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        """Check if user with this email exists"""
+        try:
+            user = User.objects.get(email=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError('No user found with this email address.')
+        return value
+
+
+class SubmitOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=6)
+    new_password = serializers.CharField(write_only=True, validators=[validate_password])
+    confirm_password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        """Validate that passwords match"""
+        if attrs['new_password'] != attrs['confirm_password']:
+            raise serializers.ValidationError("Passwords don't match.")
+        
+        # Check if user exists
+        try:
+            user = User.objects.get(email=attrs['email'])
+        except User.DoesNotExist:
+            raise serializers.ValidationError('No user found with this email address.')
+        
+        attrs['user'] = user
+        return attrs

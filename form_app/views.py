@@ -24,7 +24,9 @@ from .serializers import (
     UserLoginSerializer, 
     AdminLoginSerializer,
     UserProfileSerializer,
-    UserLogoutSerializer
+    UserLogoutSerializer,
+    RequestOTPSerializer,
+    SubmitOTPSerializer
 )
 from .utils import get_client_ip,create_or_update_user_profile
 from survey_app.helpers import add_ghl_contact_tag
@@ -994,7 +996,188 @@ class UserLogoutView(generics.GenericAPIView):
         return Response({
             'message': 'Successfully logged out'
         }, status=status.HTTP_200_OK)
-    
+
+
+class RequestOTPView(generics.GenericAPIView):
+    """Request OTP for password reset"""
+    serializer_class = RequestOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        email = serializer.validated_data['email']
+        
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'No user found with this email address.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Generate 6-digit OTP
+        import random
+        otp = str(random.randint(100000, 999999))
+        
+        # Get GHL credentials
+        try:
+            token = GHLAuthCredentials.objects.get(location_id='3zdgsEJTjNPONjCuEzbx')
+            ghl_token = token.access_token
+            location_id = token.location_id
+        except GHLAuthCredentials.DoesNotExist:
+            return Response(
+                {'error': 'GHL credentials not configured.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        headers = {
+            'Authorization': f'Bearer {ghl_token}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Version': '2021-07-28',
+        }
+        
+        # Search for contact by email
+        search_url = f"https://services.leadconnectorhq.com/contacts/?locationId={location_id}&query={email}"
+        response = requests.get(search_url, headers=headers)
+        
+        if response.status_code == 200 and response.json().get("contacts"):
+            # Contact exists - Update it with OTP
+            contact_id = response.json()["contacts"][0]["id"]
+            update_url = f"https://services.leadconnectorhq.com/contacts/{contact_id}"
+            update_data = {
+                "customFields": [
+                    {"id": "DVc7s2Y0ZgqUi4sTRI7h", "field_value": otp}
+                ],
+            }
+            update_response = requests.put(update_url, json=update_data, headers=headers)
+            
+            if update_response.status_code == 200:
+                return Response({
+                    'message': 'OTP has been sent to your email address.'
+                }, status=status.HTTP_200_OK)
+            else:
+                logger.error(f"Failed to update GHL contact with OTP: {update_response.text}")
+                return Response(
+                    {'error': 'Failed to send OTP. Please try again.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        else:
+            # Contact doesn't exist - Create it with OTP
+            create_url = "https://services.leadconnectorhq.com/contacts/"
+            create_data = {
+                "email": email,
+                "locationId": location_id,
+                "customFields": [
+                    {"id": "DVc7s2Y0ZgqUi4sTRI7h", "field_value": otp}
+                ],
+            }
+            create_response = requests.post(create_url, json=create_data, headers=headers)
+            
+            if create_response.status_code in (200, 201):
+                return Response({
+                    'message': 'OTP has been sent to your email address.'
+                }, status=status.HTTP_200_OK)
+            else:
+                logger.error(f"Failed to create GHL contact with OTP: {create_response.text}")
+                return Response(
+                    {'error': 'Failed to send OTP. Please try again.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+
+class SubmitOTPView(generics.GenericAPIView):
+    """Submit OTP and reset password"""
+    serializer_class = SubmitOTPSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        email = serializer.validated_data['email']
+        otp = serializer.validated_data['otp']
+        new_password = serializer.validated_data['new_password']
+        user = serializer.validated_data['user']
+        
+        # Get GHL credentials
+        try:
+            token = GHLAuthCredentials.objects.get(location_id='3zdgsEJTjNPONjCuEzbx')
+            ghl_token = token.access_token
+            location_id = token.location_id
+        except GHLAuthCredentials.DoesNotExist:
+            return Response(
+                {'error': 'GHL credentials not configured.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        headers = {
+            'Authorization': f'Bearer {ghl_token}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Version': '2021-07-28',
+        }
+        
+        # Search for contact by email
+        search_url = f"https://services.leadconnectorhq.com/contacts/?locationId={location_id}&query={email}"
+        response = requests.get(search_url, headers=headers)
+        
+        if response.status_code == 200 and response.json().get("contacts"):
+            contact_id = response.json()["contacts"][0]["id"]
+            
+            # Get contact details to verify OTP
+            contact_url = f"https://services.leadconnectorhq.com/contacts/{contact_id}"
+            contact_response = requests.get(contact_url, headers=headers)
+            
+            if contact_response.status_code == 200:
+                contact_data = contact_response.json().get("contact", {})
+                custom_fields = contact_data.get("customFields", [])
+                
+                # Find the OTP field
+                otp_field = None
+                for field in custom_fields:
+                    if field.get("id") == "DVc7s2Y0ZgqUi4sTRI7h":
+                        otp_field = field
+                        break
+                
+                stored_otp = otp_field.get("value") if otp_field else None
+                
+                # Verify OTP
+                if stored_otp and stored_otp == otp:
+                    # OTP is valid - update password
+                    user.set_password(new_password)
+                    user.save()
+                    
+                    # Clear OTP from GHL custom field
+                    update_url = f"https://services.leadconnectorhq.com/contacts/{contact_id}"
+                    update_data = {
+                        "customFields": [
+                            {"id": "DVc7s2Y0ZgqUi4sTRI7h", "field_value": ""}
+                        ],
+                    }
+                    requests.put(update_url, json=update_data, headers=headers)
+                    
+                    return Response({
+                        'message': 'Password has been reset successfully.'
+                    }, status=status.HTTP_200_OK)
+                else:
+                    return Response(
+                        {'error': 'Invalid OTP. Please check and try again.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            else:
+                return Response(
+                    {'error': 'Failed to verify OTP. Please try again.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        else:
+            return Response(
+                {'error': 'No contact found. Please request a new OTP.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
 
 from cryptography.fernet import Fernet
 

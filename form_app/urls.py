@@ -13,6 +13,10 @@ urlpatterns = [
     path('login/', views.UserLoginView.as_view(), name='user-login'),
     path('logout/', views.UserLogoutView.as_view(), name='user-logout'),
     
+    # Password reset
+    path('forgot-password/request-otp/', views.RequestOTPView.as_view(), name='request-otp'),
+    path('forgot-password/submit-otp/', views.SubmitOTPView.as_view(), name='submit-otp'),
+    
     # Token refresh
     path('token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
 ]
