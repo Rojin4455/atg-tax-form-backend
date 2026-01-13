@@ -254,6 +254,11 @@ class TaxFormSubmissionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
+        # Check if status is being changed to 'submitted'
+        old_status = submission.status
+        new_status = request.data.get('status', old_status)
+        form_type_name = request.data.get('form_type', submission.form_type.name if submission.form_type else None)
+        
         # Use the create serializer for updates too
         serializer = TaxFormSubmissionCreateSerializer(
             data=request.data,
@@ -267,6 +272,13 @@ class TaxFormSubmissionViewSet(viewsets.ModelViewSet):
         # Update the submission
         with transaction.atomic():
             updated_submission = self._update_submission(submission, serializer.validated_data)
+            
+            # Check if status changed to 'submitted' and add tag accordingly
+            if old_status != 'submitted' and new_status == 'submitted' and submission.user:
+                if form_type_name == 'personal':
+                    add_ghl_contact_tag(submission.user, "personal form submitted for pipeline")
+                elif form_type_name == 'business':
+                    add_ghl_contact_tag(submission.user, "business form submitted for pipeline")
             
             # Create audit log
             FormAuditLog.objects.create(
@@ -295,6 +307,11 @@ class TaxFormSubmissionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
         
+        # Check if status is being changed to 'submitted'
+        old_status = submission.status
+        new_status = request.data.get('status', old_status)
+        form_type_name = submission.form_type.name if submission.form_type else None
+        
         with transaction.atomic():
             updated_fields = []
             
@@ -315,6 +332,13 @@ class TaxFormSubmissionViewSet(viewsets.ModelViewSet):
                     updated_fields.append(f"Section: {section_key}")
             
             submission.save()
+            
+            # Check if status changed to 'submitted' and add tag accordingly
+            if old_status != 'submitted' and new_status == 'submitted' and submission.user:
+                if form_type_name == 'personal':
+                    add_ghl_contact_tag(submission.user, "personal form submitted for pipeline")
+                elif form_type_name == 'business':
+                    add_ghl_contact_tag(submission.user, "business form submitted for pipeline")
             
             # Create audit log
             FormAuditLog.objects.create(

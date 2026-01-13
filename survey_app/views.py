@@ -68,6 +68,13 @@ class SurveySubmissionCreateView(APIView):
             # Add "tax toolbox accessed" tag when user submits tax form
             add_ghl_contact_tag(request.user, "tax toolbox accessed")
             
+            # Add form-specific pipeline tag when form is created with 'submitted' status
+            if form_status == 'submitted':
+                if form_type == 'personal':
+                    add_ghl_contact_tag(request.user, "personal form submitted for pipeline")
+                elif form_type == 'business':
+                    add_ghl_contact_tag(request.user, "business form submitted for pipeline")
+            
             return Response({"id": submission.id}, status=status.HTTP_201_CREATED)
             
         except Exception as e:
@@ -133,6 +140,10 @@ class SurveySubmissionDetailView(APIView):
             pdf_data = request.data.get("pdf_data")
             submission_data = request.data
         
+        # Check if status is changing to 'submitted' (one-time tag addition)
+        old_status = submission.status
+        is_newly_submitted = old_status != 'submitted' and form_status == 'submitted'
+        
         # Update submission
         submission.form_type = form_type
         submission.status = form_status
@@ -151,6 +162,13 @@ class SurveySubmissionDetailView(APIView):
         
         # Add "tax toolbox accessed" tag when user updates/submits tax form
         add_ghl_contact_tag(request.user, "tax toolbox accessed")
+        
+        # Add form-specific pipeline tag when form is submitted for the first time
+        if is_newly_submitted:
+            if form_type == 'personal':
+                add_ghl_contact_tag(request.user, "personal form submitted for pipeline")
+            elif form_type == 'business':
+                add_ghl_contact_tag(request.user, "business form submitted for pipeline")
         
         return Response({"message": "Submission updated"}, status=status.HTTP_200_OK)
     
