@@ -1022,6 +1022,198 @@ class UserLogoutView(generics.GenericAPIView):
         }, status=status.HTTP_200_OK)
 
 
+class AdminLoginView(generics.GenericAPIView):
+    """Admin login endpoint"""
+    serializer_class = AdminLoginSerializer
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        user = serializer.validated_data['user']
+        tokens = get_tokens_for_user(user)
+        
+        return Response({
+            'message': 'Admin login successful',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'is_staff': user.is_staff,
+                'is_superuser': user.is_superuser,
+            },
+            'tokens': tokens
+        }, status=status.HTTP_200_OK)
+
+
+class AdminUserListView(generics.ListAPIView):
+    """List all users for admin panel"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserProfileSerializer
+
+    def get_queryset(self):
+        # Only allow staff/superuser to access
+        if not (self.request.user.is_staff or self.request.user.is_superuser):
+            return User.objects.none()
+        
+        queryset = User.objects.all().order_by('-date_joined')
+        
+        # Search functionality
+        search = self.request.query_params.get('search', None)
+        if search:
+            queryset = queryset.filter(
+                Q(username__icontains=search) |
+                Q(email__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search)
+            )
+        
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        
+        # Calculate statistics from the full queryset (before pagination)
+        total_count = queryset.count()
+        active_count = queryset.filter(is_active=True).count()
+        inactive_count = queryset.filter(is_active=False).count()
+        
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            response = self.get_paginated_response(serializer.data)
+            # Add statistics to paginated response
+            response.data['stats'] = {
+                'total': total_count,
+                'active': active_count,
+                'inactive': inactive_count
+            }
+            return response
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'users': serializer.data,
+            'count': total_count,
+            'stats': {
+                'total': total_count,
+                'active': active_count,
+                'inactive': inactive_count
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class AdminUserToggleActiveView(generics.GenericAPIView):
+    """Toggle user active/inactive status"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        # Only allow staff/superuser to access
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response(
+                {'error': 'Permission denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response(
+                {'error': 'user_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            user = User.objects.get(id=user_id)
+            # Prevent admin from deactivating themselves
+            if user.id == request.user.id:
+                return Response(
+                    {'error': 'You cannot deactivate your own account'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            user.is_active = not user.is_active
+            user.save()
+            
+            return Response({
+                'message': f'User {"activated" if user.is_active else "deactivated"} successfully',
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'is_active': user.is_active
+                }
+            }, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class AdminUserFormsView(generics.GenericAPIView):
+    """Get all forms for a specific user, grouped by form type"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        # Only allow staff/superuser to access
+        if not (request.user.is_staff or request.user.is_superuser):
+            return Response(
+                {'error': 'Permission denied'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user_id = kwargs.get('user_id')
+        if not user_id:
+            return Response(
+                {'error': 'user_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Import SurveySubmission and TaxEngagementLetter from survey_app
+        from survey_app.models import SurveySubmission, TaxEngagementLetter
+        from survey_app.serializers import SurveySubmissionListSerializer, TaxEngagementLetterSerializer
+        
+        # Get all submissions for this user
+        submissions = SurveySubmission.objects.filter(user=user).order_by('-submitted_at')
+        
+        # Group by form type
+        forms_by_type = {
+            'personal': [],
+            'business': [],
+            'rental': [],
+        }
+        
+        for submission in submissions:
+            form_type_name = submission.form_type
+            if form_type_name in forms_by_type:
+                serializer = SurveySubmissionListSerializer(submission)
+                forms_by_type[form_type_name].append(serializer.data)
+        
+        # Get engagement letter if it exists
+        engagement_letter = None
+        try:
+            letter = TaxEngagementLetter.objects.get(user=user)
+            engagement_letter = TaxEngagementLetterSerializer(letter).data
+        except TaxEngagementLetter.DoesNotExist:
+            pass
+        
+        # Add engagement letter to response
+        response_data = forms_by_type.copy()
+        response_data['engagement_letter'] = engagement_letter
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
 class RequestOTPView(generics.GenericAPIView):
     """Request OTP for password reset"""
     serializer_class = RequestOTPSerializer

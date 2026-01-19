@@ -435,7 +435,7 @@ class AdminLoginSerializer(serializers.Serializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_active')
+        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_active', 'is_staff', 'is_superuser')
         read_only_fields = ('id', 'username', 'date_joined')
 
 

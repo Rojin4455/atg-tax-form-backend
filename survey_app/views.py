@@ -93,12 +93,20 @@ class SurveySubmissionDetailView(APIView):
         if not form_type:
             return Response({"error": "Missing query param: type"}, status=status.HTTP_400_BAD_REQUEST)
         
-        submission = get_object_or_404(
-            SurveySubmission,
-            id=id,
-            form_type=form_type,
-            user=request.user
-        )
+        # Allow admins to view any user's submission, regular users can only view their own
+        if request.user.is_staff or request.user.is_superuser:
+            submission = get_object_or_404(
+                SurveySubmission,
+                id=id,
+                form_type=form_type
+            )
+        else:
+            submission = get_object_or_404(
+                SurveySubmission,
+                id=id,
+                form_type=form_type,
+                user=request.user
+            )
         
         serializer = SurveySubmissionSerializer(submission)
         return Response(serializer.data, status=status.HTTP_200_OK)
