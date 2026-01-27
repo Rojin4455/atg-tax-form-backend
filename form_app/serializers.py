@@ -433,10 +433,95 @@ class AdminLoginSerializer(serializers.Serializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    profile = serializers.SerializerMethodField()
+    
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_active', 'is_staff', 'is_superuser')
+        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_active', 'is_staff', 'is_superuser', 'profile')
         read_only_fields = ('id', 'username', 'date_joined')
+    
+    def get_profile(self, obj):
+        """Get UserProfile data if it exists"""
+        try:
+            from .models import UserProfile
+            profile = UserProfile.objects.get(user=obj)
+            return {
+                'is_admin': profile.is_admin,
+                'is_super_admin': profile.is_super_admin,
+                'can_list_users': profile.can_list_users,
+                'can_view_personal_organizer': profile.can_view_personal_organizer,
+                'can_view_business_organizer': profile.can_view_business_organizer,
+                'can_view_rental_organizer': profile.can_view_rental_organizer,
+                'can_view_engagement_letter': profile.can_view_engagement_letter,
+            }
+        except:
+            return None
+
+
+class AdminProfileSerializer(serializers.ModelSerializer):
+    """Serializer for UserProfile with admin permissions"""
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
+    email = serializers.EmailField(source='user.email', read_only=True)
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    last_name = serializers.CharField(source='user.last_name', read_only=True)
+    is_active = serializers.BooleanField(source='user.is_active', read_only=True)
+    date_joined = serializers.DateTimeField(source='user.date_joined', read_only=True)
+    
+    class Meta:
+        from .models import UserProfile
+        model = UserProfile
+        fields = (
+            'user_id', 'username', 'email', 'first_name', 'last_name', 
+            'is_active', 'date_joined',
+            'is_admin', 'is_super_admin',
+            'can_list_users', 'can_view_personal_organizer', 
+            'can_view_business_organizer', 'can_view_rental_organizer',
+            'can_view_engagement_letter', 'created_at', 'updated_at'
+        )
+        read_only_fields = ('created_at', 'updated_at')
+
+
+class CreateAdminSerializer(serializers.Serializer):
+    """Serializer for creating an admin from existing user"""
+    user_id = serializers.IntegerField(required=True)
+    is_super_admin = serializers.BooleanField(default=False)
+    can_list_users = serializers.BooleanField(default=False)
+    can_view_personal_organizer = serializers.BooleanField(default=False)
+    can_view_business_organizer = serializers.BooleanField(default=False)
+    can_view_rental_organizer = serializers.BooleanField(default=False)
+    can_view_engagement_letter = serializers.BooleanField(default=False)
+    
+    def validate_user_id(self, value):
+        """Validate that user exists"""
+        try:
+            user = User.objects.get(id=value)
+            if not user.is_active:
+                raise serializers.ValidationError("Cannot create admin from inactive user.")
+            return value
+        except User.DoesNotExist:
+            raise serializers.ValidationError("User not found.")
+
+
+class UpdateAdminPermissionsSerializer(serializers.Serializer):
+    """Serializer for updating admin permissions"""
+    is_super_admin = serializers.BooleanField(required=False)
+    can_list_users = serializers.BooleanField(required=False)
+    can_view_personal_organizer = serializers.BooleanField(required=False)
+    can_view_business_organizer = serializers.BooleanField(required=False)
+    can_view_rental_organizer = serializers.BooleanField(required=False)
+    can_view_engagement_letter = serializers.BooleanField(required=False)
+
+
+class ResetAdminPasswordSerializer(serializers.Serializer):
+    """Serializer for resetting admin password"""
+    new_password = serializers.CharField(write_only=True, validators=[validate_password])
+    confirm_password = serializers.CharField(write_only=True)
+    
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['confirm_password']:
+            raise serializers.ValidationError("Passwords don't match.")
+        return attrs
 
 
 class UserLogoutSerializer(serializers.Serializer):

@@ -14,7 +14,8 @@ from django.utils import timezone
 import json
 from .models import (
     TaxFormSubmission, FormType, FormSection, FormQuestion,
-    FormAnswer, FormSectionData, DependentInfo, BusinessOwnerInfo,FormAuditLog
+    FormAnswer, FormSectionData, DependentInfo, BusinessOwnerInfo, FormAuditLog,
+    UserProfile
 )
 from django.utils.dateparse import parse_datetime
 
@@ -26,7 +27,11 @@ from .serializers import (
     UserProfileSerializer,
     UserLogoutSerializer,
     RequestOTPSerializer,
-    SubmitOTPSerializer
+    SubmitOTPSerializer,
+    AdminProfileSerializer,
+    CreateAdminSerializer,
+    UpdateAdminPermissionsSerializer,
+    ResetAdminPasswordSerializer
 )
 from .utils import get_client_ip,create_or_update_user_profile
 from survey_app.helpers import add_ghl_contact_tag
@@ -981,7 +986,7 @@ class UserSignupView(generics.CreateAPIView):
 
 
 class UserLoginView(generics.GenericAPIView):
-    """User login endpoint"""
+    """User login endpoint - allows both regular users and admins"""
     serializer_class = UserLoginSerializer
     permission_classes = [AllowAny]
 
@@ -991,6 +996,7 @@ class UserLoginView(generics.GenericAPIView):
         
         user = serializer.validated_data['user']
         tokens = get_tokens_for_user(user)
+        permissions = get_user_permissions(user)
         
         return Response({
             'message': 'Login successful',
@@ -1003,6 +1009,7 @@ class UserLoginView(generics.GenericAPIView):
                 'is_staff': user.is_staff,
                 'is_superuser': user.is_superuser,
             },
+            'permissions': permissions,
             'tokens': tokens
         }, status=status.HTTP_200_OK)
 
@@ -1032,7 +1039,27 @@ class AdminLoginView(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
         
         user = serializer.validated_data['user']
+        
+        # Check if user is an admin (either through UserProfile or is_staff/is_superuser)
+        is_admin = False
+        is_super_admin = False
+        try:
+            profile = UserProfile.objects.get(user=user)
+            is_admin = profile.is_admin
+            is_super_admin = profile.is_super_admin
+        except UserProfile.DoesNotExist:
+            # Fallback to is_staff or is_superuser for backward compatibility
+            is_admin = user.is_staff or user.is_superuser
+            is_super_admin = user.is_superuser
+        
+        if not is_admin:
+            return Response(
+                {'error': 'Access denied. Admin privileges required.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         tokens = get_tokens_for_user(user)
+        permissions = get_user_permissions(user)
         
         return Response({
             'message': 'Admin login successful',
@@ -1045,6 +1072,7 @@ class AdminLoginView(generics.GenericAPIView):
                 'is_staff': user.is_staff,
                 'is_superuser': user.is_superuser,
             },
+            'permissions': permissions,
             'tokens': tokens
         }, status=status.HTTP_200_OK)
 
@@ -1055,8 +1083,11 @@ class AdminUserListView(generics.ListAPIView):
     serializer_class = UserProfileSerializer
 
     def get_queryset(self):
-        # Only allow staff/superuser to access
-        if not (self.request.user.is_staff or self.request.user.is_superuser):
+        # Check if user has permission to list users
+        permissions = get_user_permissions(self.request.user)
+        can_list = permissions.get('can_list_users', False) or permissions.get('is_super_admin', False) or self.request.user.is_staff or self.request.user.is_superuser
+        
+        if not can_list:
             return User.objects.none()
         
         queryset = User.objects.all().order_by('-date_joined')
@@ -1157,8 +1188,11 @@ class AdminUserFormsView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        # Only allow staff/superuser to access
-        if not (request.user.is_staff or request.user.is_superuser):
+        # Check if user is admin
+        permissions = get_user_permissions(request.user)
+        is_admin = permissions.get('is_admin', False) or request.user.is_staff or request.user.is_superuser
+        
+        if not is_admin:
             return Response(
                 {'error': 'Permission denied'},
                 status=status.HTTP_403_FORBIDDEN
@@ -1186,7 +1220,7 @@ class AdminUserFormsView(generics.GenericAPIView):
         # Get all submissions for this user
         submissions = SurveySubmission.objects.filter(user=user).order_by('-submitted_at')
         
-        # Group by form type
+        # Group by form type - filter based on permissions
         forms_by_type = {
             'personal': [],
             'business': [],
@@ -1195,17 +1229,26 @@ class AdminUserFormsView(generics.GenericAPIView):
         
         for submission in submissions:
             form_type_name = submission.form_type
+            # Check permissions for each form type
+            if form_type_name == 'personal' and not permissions.get('can_view_personal_organizer', False) and not permissions.get('is_super_admin', False):
+                continue
+            if form_type_name == 'business' and not permissions.get('can_view_business_organizer', False) and not permissions.get('is_super_admin', False):
+                continue
+            if form_type_name == 'rental' and not permissions.get('can_view_rental_organizer', False) and not permissions.get('is_super_admin', False):
+                continue
+            
             if form_type_name in forms_by_type:
                 serializer = SurveySubmissionListSerializer(submission)
                 forms_by_type[form_type_name].append(serializer.data)
         
-        # Get engagement letter if it exists
+        # Get engagement letter if it exists and user has permission
         engagement_letter = None
-        try:
-            letter = TaxEngagementLetter.objects.get(user=user)
-            engagement_letter = TaxEngagementLetterSerializer(letter).data
-        except TaxEngagementLetter.DoesNotExist:
-            pass
+        if permissions.get('can_view_engagement_letter', False) or permissions.get('is_super_admin', False):
+            try:
+                letter = TaxEngagementLetter.objects.get(user=user)
+                engagement_letter = TaxEngagementLetterSerializer(letter).data
+            except TaxEngagementLetter.DoesNotExist:
+                pass
         
         # Add engagement letter to response
         response_data = forms_by_type.copy()
@@ -1403,3 +1446,246 @@ def decrypt_value(encrypted_text):
         return cipher.decrypt(encrypted_text.encode()).decode()
     except:
         return encrypted_text
+
+
+def is_super_admin(user):
+    """Check if user is a super admin"""
+    try:
+        profile = UserProfile.objects.get(user=user)
+        return profile.is_super_admin
+    except UserProfile.DoesNotExist:
+        return False
+
+
+def get_user_permissions(user):
+    """Get user permissions from UserProfile"""
+    try:
+        profile = UserProfile.objects.get(user=user)
+        return {
+            'is_admin': profile.is_admin,
+            'is_super_admin': profile.is_super_admin,
+            'can_list_users': profile.can_list_users,
+            'can_view_personal_organizer': profile.can_view_personal_organizer,
+            'can_view_business_organizer': profile.can_view_business_organizer,
+            'can_view_rental_organizer': profile.can_view_rental_organizer,
+            'can_view_engagement_letter': profile.can_view_engagement_letter,
+        }
+    except UserProfile.DoesNotExist:
+        return {
+            'is_admin': False,
+            'is_super_admin': False,
+            'can_list_users': False,
+            'can_view_personal_organizer': False,
+            'can_view_business_organizer': False,
+            'can_view_rental_organizer': False,
+            'can_view_engagement_letter': False,
+        }
+
+
+class AdminManagementListView(generics.ListAPIView):
+    """List all admins - only accessible by super admins"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = AdminProfileSerializer
+
+    def get_queryset(self):
+        # Only allow super admins to access
+        if not is_super_admin(self.request.user):
+            return UserProfile.objects.none()
+        
+        return UserProfile.objects.filter(is_admin=True).select_related('user').order_by('-created_at')
+
+
+class CreateAdminView(generics.GenericAPIView):
+    """Create admin from existing user - only accessible by super admins"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = CreateAdminSerializer
+
+    def post(self, request, *args, **kwargs):
+        # Only allow super admins to create admins
+        if not is_super_admin(request.user):
+            return Response(
+                {'error': 'Permission denied. Super admin access required.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        user_id = serializer.validated_data['user_id']
+        
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Get or create UserProfile
+        profile, created = UserProfile.objects.get_or_create(user=user)
+        
+        # Set admin status and permissions
+        profile.is_admin = True
+        profile.is_super_admin = serializer.validated_data.get('is_super_admin', False)
+        profile.can_list_users = serializer.validated_data.get('can_list_users', False)
+        profile.can_view_personal_organizer = serializer.validated_data.get('can_view_personal_organizer', False)
+        profile.can_view_business_organizer = serializer.validated_data.get('can_view_business_organizer', False)
+        profile.can_view_rental_organizer = serializer.validated_data.get('can_view_rental_organizer', False)
+        profile.can_view_engagement_letter = serializer.validated_data.get('can_view_engagement_letter', False)
+        profile.save()
+        
+        # Also set is_staff to True so they can access admin portal
+        user.is_staff = True
+        user.save()
+        
+        return Response({
+            'message': 'Admin created successfully',
+            'admin': AdminProfileSerializer(profile).data
+        }, status=status.HTTP_201_CREATED)
+
+
+class UpdateAdminPermissionsView(generics.GenericAPIView):
+    """Update admin permissions - only accessible by super admins"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = UpdateAdminPermissionsSerializer
+
+    def post(self, request, *args, **kwargs):
+        # Only allow super admins to update permissions
+        if not is_super_admin(request.user):
+            return Response(
+                {'error': 'Permission denied. Super admin access required.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        admin_id = request.data.get('admin_id')
+        if not admin_id:
+            return Response(
+                {'error': 'admin_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            profile = UserProfile.objects.get(user_id=admin_id, is_admin=True)
+        except UserProfile.DoesNotExist:
+            return Response(
+                {'error': 'Admin not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Prevent super admin from modifying their own super admin status
+        if profile.user.id == request.user.id and 'is_super_admin' in request.data:
+            if not request.data.get('is_super_admin', False):
+                return Response(
+                    {'error': 'You cannot remove your own super admin status'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Update permissions
+        for field, value in serializer.validated_data.items():
+            setattr(profile, field, value)
+        profile.save()
+        
+        return Response({
+            'message': 'Admin permissions updated successfully',
+            'admin': AdminProfileSerializer(profile).data
+        }, status=status.HTTP_200_OK)
+
+
+class DeactivateAdminView(generics.GenericAPIView):
+    """Deactivate/reactivate admin - only accessible by super admins"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        # Only allow super admins to deactivate admins
+        if not is_super_admin(request.user):
+            return Response(
+                {'error': 'Permission denied. Super admin access required.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        admin_id = request.data.get('admin_id')
+        if not admin_id:
+            return Response(
+                {'error': 'admin_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            profile = UserProfile.objects.get(user_id=admin_id, is_admin=True)
+        except UserProfile.DoesNotExist:
+            return Response(
+                {'error': 'Admin not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Prevent super admin from deactivating themselves
+        if profile.user.id == request.user.id:
+            return Response(
+                {'error': 'You cannot deactivate your own account'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Toggle admin status
+        profile.is_admin = not profile.is_admin
+        profile.save()
+        
+        # Also update user's is_staff status
+        profile.user.is_staff = profile.is_admin
+        profile.user.save()
+        
+        return Response({
+            'message': f'Admin {"activated" if profile.is_admin else "deactivated"} successfully',
+            'admin': AdminProfileSerializer(profile).data
+        }, status=status.HTTP_200_OK)
+
+
+class ResetAdminPasswordView(generics.GenericAPIView):
+    """Reset admin password - only accessible by super admins"""
+    permission_classes = [IsAuthenticated]
+    serializer_class = ResetAdminPasswordSerializer
+
+    def post(self, request, *args, **kwargs):
+        # Only allow super admins to reset passwords
+        if not is_super_admin(request.user):
+            return Response(
+                {'error': 'Permission denied. Super admin access required.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        admin_id = request.data.get('admin_id')
+        if not admin_id:
+            return Response(
+                {'error': 'admin_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            profile = UserProfile.objects.get(user_id=admin_id, is_admin=True)
+        except UserProfile.DoesNotExist:
+            return Response(
+                {'error': 'Admin not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Set new password
+        profile.user.set_password(serializer.validated_data['new_password'])
+        profile.user.save()
+        
+        return Response({
+            'message': 'Password reset successfully'
+        }, status=status.HTTP_200_OK)
+
+
+class AdminPermissionsView(generics.GenericAPIView):
+    """Get current admin's permissions"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        permissions = get_user_permissions(request.user)
+        return Response(permissions, status=status.HTTP_200_OK)

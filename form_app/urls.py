@@ -19,6 +19,14 @@ urlpatterns = [
     path('admin/users/toggle-active/', views.AdminUserToggleActiveView.as_view(), name='admin-toggle-user-active'),
     path('admin/users/<int:user_id>/forms/', views.AdminUserFormsView.as_view(), name='admin-user-forms'),
     
+    # Admin management endpoints (super admin only)
+    path('admin/manage/list/', views.AdminManagementListView.as_view(), name='admin-management-list'),
+    path('admin/manage/create/', views.CreateAdminView.as_view(), name='admin-create'),
+    path('admin/manage/update-permissions/', views.UpdateAdminPermissionsView.as_view(), name='admin-update-permissions'),
+    path('admin/manage/deactivate/', views.DeactivateAdminView.as_view(), name='admin-deactivate'),
+    path('admin/manage/reset-password/', views.ResetAdminPasswordView.as_view(), name='admin-reset-password'),
+    path('admin/permissions/', views.AdminPermissionsView.as_view(), name='admin-permissions'),
+    
     # Password reset
     path('forgot-password/request-otp/', views.RequestOTPView.as_view(), name='request-otp'),
     path('forgot-password/submit-otp/', views.SubmitOTPView.as_view(), name='submit-otp'),

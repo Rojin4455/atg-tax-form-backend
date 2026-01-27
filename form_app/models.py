@@ -353,3 +353,22 @@ class UserProfile(models.Model):
     rental_form_url = models.URLField(blank=True, null=True)
     business_form_url = models.URLField(blank=True, null=True)
     personal_form_url = models.URLField(blank=True, null=True)
+    
+    # Admin and permission fields
+    is_admin = models.BooleanField(default=False, help_text="Designates if this user is an admin")
+    is_super_admin = models.BooleanField(default=False, help_text="Designates if this user is a super admin with full access")
+    can_list_users = models.BooleanField(default=False, help_text="Permission to list and view users")
+    can_view_personal_organizer = models.BooleanField(default=False, help_text="Permission to view personal organizer data")
+    can_view_business_organizer = models.BooleanField(default=False, help_text="Permission to view business organizer data")
+    can_view_rental_organizer = models.BooleanField(default=False, help_text="Permission to view rental organizer data")
+    can_view_engagement_letter = models.BooleanField(default=False, help_text="Permission to view engagement letter data")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "User Profile"
+        verbose_name_plural = "User Profiles"
+    
+    def __str__(self):
+        return f"{self.user.username} - {'Super Admin' if self.is_super_admin else 'Admin' if self.is_admin else 'User'}"

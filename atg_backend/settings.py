@@ -117,10 +117,13 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
+    # Access tokens expire after 6 days - users will need to refresh
+    # Refresh tokens expire after 12 days - users will need to log in again
+    # The frontend automatically handles token refresh and logout on expiration
     'ACCESS_TOKEN_LIFETIME': timedelta(days=6),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=12),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
+    'ROTATE_REFRESH_TOKENS': True,  # Generate new refresh token on each refresh
+    'BLACKLIST_AFTER_ROTATION': True,  # Blacklist old refresh tokens for security
     'UPDATE_LAST_LOGIN': False,
 
     'ALGORITHM': 'HS256',
