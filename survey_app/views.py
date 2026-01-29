@@ -1,12 +1,13 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework.parsers import MultiPartParser, JSONParser
 from .models import SurveySubmission
 from .serializers import SurveySubmissionSerializer, SurveySubmissionListSerializer
-from .helpers import update_ghl_contact_tags_and_links,upload_tax_engagement_pdf_to_ghl,add_ghl_contact_tag
+from .helpers import update_ghl_contact_tags_and_links, upload_tax_engagement_pdf_to_ghl, add_ghl_contact_tag, add_ghl_submission_note, add_ghl_engagement_letter_note
 
 import json
 class SurveySubmissionCreateView(APIView):
@@ -68,12 +69,13 @@ class SurveySubmissionCreateView(APIView):
             # Add "tax toolbox accessed" tag when user submits tax form
             add_ghl_contact_tag(request.user, "tax toolbox accessed")
             
-            # Add form-specific pipeline tag when form is created with 'submitted' status
+            # Add form-specific pipeline tag and GHL note when form is created with 'submitted' status
             if form_status == 'submitted':
                 if form_type == 'personal':
                     add_ghl_contact_tag(request.user, "personal form submitted for pipeline")
                 elif form_type == 'business':
                     add_ghl_contact_tag(request.user, "business form submitted for pipeline")
+                add_ghl_submission_note(request.user, form_type, submission.id, timezone.now())
             
             return Response({"id": submission.id}, status=status.HTTP_201_CREATED)
             
@@ -171,12 +173,13 @@ class SurveySubmissionDetailView(APIView):
         # Add "tax toolbox accessed" tag when user updates/submits tax form
         add_ghl_contact_tag(request.user, "tax toolbox accessed")
         
-        # Add form-specific pipeline tag when form is submitted for the first time
+        # Add form-specific pipeline tag and GHL note when form is submitted for the first time
         if is_newly_submitted:
             if form_type == 'personal':
                 add_ghl_contact_tag(request.user, "personal form submitted for pipeline")
             elif form_type == 'business':
                 add_ghl_contact_tag(request.user, "business form submitted for pipeline")
+            add_ghl_submission_note(request.user, submission.form_type, submission.id, timezone.now())
         
         return Response({"message": "Submission updated"}, status=status.HTTP_200_OK)
     
@@ -198,6 +201,16 @@ class SurveySubmissionDetailView(APIView):
             {"message": "Form submission deleted successfully."},
             status=status.HTTP_200_OK
         )
+
+
+class SurveySubmissionPublicDetailView(APIView):
+    """Public endpoint: fetch a submission by ID only. No auth required. Accepts ID in any format (UUID string)."""
+    permission_classes = [AllowAny]
+
+    def get(self, request, id):
+        submission = get_object_or_404(SurveySubmission, id=id)
+        serializer = SurveySubmissionSerializer(submission)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class SurveySubmissionListView(APIView):
@@ -270,6 +283,8 @@ class TaxEngagementLetterView(generics.GenericAPIView):
             
             # Add "tax toolbox accessed" tag when user signs tax engagement letter
             add_ghl_contact_tag(request.user, "tax toolbox accessed")
+            # Add GHL note for engagement letter signed
+            add_ghl_engagement_letter_note(request.user, obj.date_signed)
             
             return Response(self.serializer_class(obj).data, status=201 if created else 200)
         return Response(serializer.errors, status=400)

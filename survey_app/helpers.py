@@ -477,6 +477,104 @@ def update_ghl_contact_for_tracker(ghl_contact_id,updated_tags,tracker_tag,heade
     print("tracker tag is added")
 
 
+def add_ghl_submission_note(user, form_type, submission_id, submitted_at):
+    """
+    Create a note on the GHL contact when an organizer is submitted.
+    Note body format: "Personal Tax Organizer – Submitted: January 13, 2026 - Submission URL - {url}"
+    """
+    try:
+        profile = UserProfile.objects.get(user=user)
+        ghl_contact_id = profile.ghl_contact_id
+        if not ghl_contact_id:
+            print("[GHL_NOTE] No GHL contact ID found — skipping note")
+            return False
+
+        ghl_creds = GHLAuthCredentials.objects.first()
+        if not ghl_creds:
+            print("[GHL_NOTE] No GHL credentials found — skipping note")
+            return False
+
+        base_url = config("FRONTEND_BASE_URL", default="http://localhost:8080").rstrip("/")
+        submission_url = f"{base_url}/submission/{submission_id}"
+
+        organizer_labels = {
+            "personal": "Personal Tax Organizer",
+            "business": "Business Tax Organizer",
+            "rental": "Rental Property Organizer",
+        }
+        label = organizer_labels.get(form_type, form_type.replace("_", " ").title())
+        date_str = submitted_at.strftime("%m/%d/%Y") if submitted_at else ""
+
+        body = f"{label} – Submitted: {date_str} - Submission URL - {submission_url}"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Version": "2021-07-28",
+            "Authorization": f"Bearer {ghl_creds.access_token}",
+        }
+        notes_url = f"https://services.leadconnectorhq.com/contacts/{ghl_contact_id}/notes"
+        resp = requests.post(notes_url, headers=headers, json={"body": body})
+
+        if resp.status_code in (200, 201):
+            print(f"[GHL_NOTE] Note created for submission {submission_id}")
+            return True
+        print(f"[GHL_NOTE] Failed to create note: {resp.status_code} - {resp.text}")
+        return False
+    except UserProfile.DoesNotExist:
+        print("[GHL_NOTE] UserProfile not found — skipping note")
+        return False
+    except Exception as e:
+        print(f"[GHL_NOTE] Exception: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return False
+
+
+def add_ghl_engagement_letter_note(user, date_signed):
+    """
+    Create a note on the GHL contact when the tax engagement letter is signed.
+    Note body format: "Tax Engagement Letter – Signed: MM/DD/YYYY"
+    """
+    try:
+        profile = UserProfile.objects.get(user=user)
+        ghl_contact_id = profile.ghl_contact_id
+        if not ghl_contact_id:
+            print("[GHL_NOTE] No GHL contact ID found — skipping engagement letter note")
+            return False
+
+        ghl_creds = GHLAuthCredentials.objects.first()
+        if not ghl_creds:
+            print("[GHL_NOTE] No GHL credentials found — skipping engagement letter note")
+            return False
+
+        date_str = date_signed.strftime("%m/%d/%Y") if date_signed else ""
+        body = f"Tax Engagement Letter – Signed: {date_str}"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Version": "2021-07-28",
+            "Authorization": f"Bearer {ghl_creds.access_token}",
+        }
+        notes_url = f"https://services.leadconnectorhq.com/contacts/{ghl_contact_id}/notes"
+        resp = requests.post(notes_url, headers=headers, json={"body": body})
+
+        if resp.status_code in (200, 201):
+            print("[GHL_NOTE] Engagement letter note created")
+            return True
+        print(f"[GHL_NOTE] Failed to create engagement letter note: {resp.status_code} - {resp.text}")
+        return False
+    except UserProfile.DoesNotExist:
+        print("[GHL_NOTE] UserProfile not found — skipping engagement letter note")
+        return False
+    except Exception as e:
+        print(f"[GHL_NOTE] Exception in engagement letter note: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return False
+
+
 def add_ghl_contact_tag(user, tag_name):
     """
     Add a tag to a GHL contact for a given user.
