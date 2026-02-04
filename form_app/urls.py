@@ -18,6 +18,7 @@ urlpatterns = [
     path('admin/users/', views.AdminUserListView.as_view(), name='admin-users-list'),
     path('admin/users/toggle-active/', views.AdminUserToggleActiveView.as_view(), name='admin-toggle-user-active'),
     path('admin/users/<int:user_id>/forms/', views.AdminUserFormsView.as_view(), name='admin-user-forms'),
+    path('admin/submissions/reassign/', views.AdminReassignSubmissionView.as_view(), name='admin-reassign-submission'),
     
     # Admin management endpoints (super admin only)
     path('admin/manage/list/', views.AdminManagementListView.as_view(), name='admin-management-list'),

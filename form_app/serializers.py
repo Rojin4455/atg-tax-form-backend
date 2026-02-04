@@ -452,6 +452,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
                 'can_view_personal_organizer': profile.can_view_personal_organizer,
                 'can_view_business_organizer': profile.can_view_business_organizer,
                 'can_view_rental_organizer': profile.can_view_rental_organizer,
+                'can_view_flip_organizer': profile.can_view_flip_organizer,
                 'can_view_engagement_letter': profile.can_view_engagement_letter,
             }
         except:
@@ -477,7 +478,7 @@ class AdminProfileSerializer(serializers.ModelSerializer):
             'is_admin', 'is_super_admin',
             'can_list_users', 'can_view_personal_organizer', 
             'can_view_business_organizer', 'can_view_rental_organizer',
-            'can_view_engagement_letter', 'created_at', 'updated_at'
+            'can_view_flip_organizer', 'can_view_engagement_letter', 'created_at', 'updated_at'
         )
         read_only_fields = ('created_at', 'updated_at')
 
@@ -490,6 +491,7 @@ class CreateAdminSerializer(serializers.Serializer):
     can_view_personal_organizer = serializers.BooleanField(default=False)
     can_view_business_organizer = serializers.BooleanField(default=False)
     can_view_rental_organizer = serializers.BooleanField(default=False)
+    can_view_flip_organizer = serializers.BooleanField(default=False)
     can_view_engagement_letter = serializers.BooleanField(default=False)
     
     def validate_user_id(self, value):
@@ -510,6 +512,7 @@ class UpdateAdminPermissionsSerializer(serializers.Serializer):
     can_view_personal_organizer = serializers.BooleanField(required=False)
     can_view_business_organizer = serializers.BooleanField(required=False)
     can_view_rental_organizer = serializers.BooleanField(required=False)
+    can_view_flip_organizer = serializers.BooleanField(required=False)
     can_view_engagement_letter = serializers.BooleanField(required=False)
 
 

@@ -4,12 +4,27 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.contrib.auth.models import User
 from rest_framework.parsers import MultiPartParser, JSONParser
 from .models import SurveySubmission
 from .serializers import SurveySubmissionSerializer, SurveySubmissionListSerializer
 from .helpers import update_ghl_contact_tags_and_links, upload_tax_engagement_pdf_to_ghl, add_ghl_contact_tag, add_ghl_submission_note, add_ghl_engagement_letter_note
 
 import json
+
+
+def _is_admin_user(user):
+    """Check if user is staff, superuser, or has admin profile."""
+    if user.is_staff or user.is_superuser:
+        return True
+    try:
+        from form_app.models import UserProfile
+        profile = UserProfile.objects.get(user=user)
+        return profile.is_admin
+    except Exception:
+        return False
+
+
 class SurveySubmissionCreateView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, JSONParser]  # Add parsers
@@ -24,14 +39,28 @@ class SurveySubmissionCreateView(APIView):
             form_name = request.data.get("form_name")
             form_status = request.data.get("status", "drafted")
             pdf_data = request.data.get("pdf_data")
+            target_user_id = request.data.get("target_user_id")  # When admin fills form "for" a client
             
-            # Build submission_data by copying all request data
+            # Normalize status: frontend may send 'draft', model expects 'drafted'
+            if form_status == 'draft':
+                form_status = 'drafted'
+            
+            # Determine submission owner: use target_user_id only when requester is admin
+            submission_owner = request.user
+            if target_user_id is not None and _is_admin_user(request.user):
+                try:
+                    submission_owner = User.objects.get(pk=int(target_user_id))
+                except (User.DoesNotExist, ValueError, TypeError):
+                    return Response(
+                        {"error": "Invalid target_user_id or user not found"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Build submission_data by copying all request data (exclude target_user_id from stored data)
             submission_data = {}
             for key, value in request.data.items():
-                if key == 'pdf_data':
-                    continue  # Don't store PDF data in submission_data
-                    
-                # Parse JSON strings back to objects if they were stringified for FormData
+                if key in ('pdf_data', 'target_user_id'):
+                    continue
                 if isinstance(value, str) and (value.startswith('{') or value.startswith('[')):
                     try:
                         submission_data[key] = json.loads(value)
@@ -43,12 +72,11 @@ class SurveySubmissionCreateView(APIView):
             if not form_type:
                 return Response({"error": "Missing 'form_type'"}, status=status.HTTP_400_BAD_REQUEST)
             
-            print(f"[DEBUG] Creating submission with form_type={form_type}, status={form_status}")
+            print(f"[DEBUG] Creating submission with form_type={form_type}, status={form_status}, user={submission_owner.id}")
             print(f"[DEBUG] PDF data present: {bool(pdf_data)}")
             
-            # Create submission
             submission = SurveySubmission.objects.create(
-                user=request.user,
+                user=submission_owner,
                 form_type=form_type,
                 form_name=form_name,
                 status=form_status,
@@ -57,25 +85,25 @@ class SurveySubmissionCreateView(APIView):
             
             print(f"[DEBUG] Created submission with ID: {submission.id}")
             
-            # Update GHL with PDF data if provided
             update_ghl_contact_tags_and_links(
-                user=request.user,
+                user=submission_owner,
                 form_type=submission.form_type,
                 status=submission.status,
                 form_id=submission.id,
                 pdf_data=pdf_data
             )
+            add_ghl_contact_tag(submission_owner, "tax toolbox accessed")
             
-            # Add "tax toolbox accessed" tag when user submits tax form
-            add_ghl_contact_tag(request.user, "tax toolbox accessed")
-            
-            # Add form-specific pipeline tag and GHL note when form is created with 'submitted' status
             if form_status == 'submitted':
                 if form_type == 'personal':
-                    add_ghl_contact_tag(request.user, "personal form submitted for pipeline")
+                    add_ghl_contact_tag(submission_owner, "personal form submitted for pipeline")
                 elif form_type == 'business':
-                    add_ghl_contact_tag(request.user, "business form submitted for pipeline")
-                add_ghl_submission_note(request.user, form_type, submission.id, timezone.now())
+                    add_ghl_contact_tag(submission_owner, "business form submitted for pipeline")
+                elif form_type == 'rental':
+                    add_ghl_contact_tag(submission_owner, "rental form submitted for pipeline")
+                elif form_type == 'flip':
+                    add_ghl_contact_tag(submission_owner, "flip form submitted for pipeline")
+                add_ghl_submission_note(submission_owner, form_type, submission.id, timezone.now())
             
             return Response({"id": submission.id}, status=status.HTTP_201_CREATED)
             
@@ -114,7 +142,14 @@ class SurveySubmissionDetailView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
     
     def put(self, request, id):
-        submission = get_object_or_404(SurveySubmission, id=id, user=request.user)
+        form_type = request.query_params.get("type")
+        if not form_type:
+            return Response({"error": "Missing query param: type"}, status=status.HTTP_400_BAD_REQUEST)
+        # Allow admins to update any user's submission; regular users only their own
+        if _is_admin_user(request.user):
+            submission = get_object_or_404(SurveySubmission, id=id, form_type=form_type)
+        else:
+            submission = get_object_or_404(SurveySubmission, id=id, form_type=form_type, user=request.user)
         
         # Handle both JSON and multipart form data
         if request.content_type.startswith('multipart/form-data'):
@@ -161,25 +196,26 @@ class SurveySubmissionDetailView(APIView):
         submission.submission_data = submission_data
         submission.save()
         
-        # Update GHL with PDF data if provided
+        # Use submission owner for GHL (so client gets tags when admin fills for them)
+        submission_owner = submission.user
         update_ghl_contact_tags_and_links(
-            user=request.user,
+            user=submission_owner,
             form_type=submission.form_type,
             status=submission.status,
             form_id=submission.id,
             pdf_data=pdf_data  # Pass the PDF data
         )
-        
-        # Add "tax toolbox accessed" tag when user updates/submits tax form
-        add_ghl_contact_tag(request.user, "tax toolbox accessed")
-        
-        # Add form-specific pipeline tag and GHL note when form is submitted for the first time
+        add_ghl_contact_tag(submission_owner, "tax toolbox accessed")
         if is_newly_submitted:
             if form_type == 'personal':
-                add_ghl_contact_tag(request.user, "personal form submitted for pipeline")
+                add_ghl_contact_tag(submission_owner, "personal form submitted for pipeline")
             elif form_type == 'business':
-                add_ghl_contact_tag(request.user, "business form submitted for pipeline")
-            add_ghl_submission_note(request.user, submission.form_type, submission.id, timezone.now())
+                add_ghl_contact_tag(submission_owner, "business form submitted for pipeline")
+            elif form_type == 'rental':
+                add_ghl_contact_tag(submission_owner, "rental form submitted for pipeline")
+            elif form_type == 'flip':
+                add_ghl_contact_tag(submission_owner, "flip form submitted for pipeline")
+            add_ghl_submission_note(submission_owner, submission.form_type, submission.id, timezone.now())
         
         return Response({"message": "Submission updated"}, status=status.HTTP_200_OK)
     
@@ -188,13 +224,15 @@ class SurveySubmissionDetailView(APIView):
         form_type = request.query_params.get("type")
         if not form_type:
             return Response({"error": "Missing query param: type"}, status=status.HTTP_400_BAD_REQUEST)
-
-        submission = get_object_or_404(
-            SurveySubmission,
-            id=id,
-            form_type=form_type,
-            user=request.user
-        )
+        if _is_admin_user(request.user):
+            submission = get_object_or_404(SurveySubmission, id=id, form_type=form_type)
+        else:
+            submission = get_object_or_404(
+                SurveySubmission,
+                id=id,
+                form_type=form_type,
+                user=request.user
+            )
 
         submission.delete()
         return Response(
@@ -226,16 +264,24 @@ class FormSubmissionsListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Get optional form_type from query params
         form_type = request.GET.get("form_type", None)
+        for_user_id = request.GET.get("for_user_id", None)
 
-        # Filter submissions by user
-        submissions = SurveySubmission.objects.filter(user=request.user)
+        # When admin requests another user's forms (e.g. "fill for client"), use that user
+        if for_user_id is not None and _is_admin_user(request.user):
+            try:
+                target_user = User.objects.get(pk=int(for_user_id))
+                submissions = SurveySubmission.objects.filter(user=target_user)
+            except (User.DoesNotExist, ValueError, TypeError):
+                submissions = SurveySubmission.objects.filter(user=request.user)
+        else:
+            submissions = SurveySubmission.objects.filter(user=request.user)
 
-        # If form_type is provided, filter further
-        if form_type in dict(SurveySubmission.FORM_TYPES).keys():
+        valid_form_types = list(dict(SurveySubmission.FORM_TYPES).keys())
+        if 'flip' not in valid_form_types:
+            valid_form_types.append('flip')
+        if form_type and form_type in valid_form_types:
             submissions = submissions.filter(form_type=form_type)
-            # submissions.delete()
         submissions = submissions.order_by('-submitted_at')
         serializer = SurveySubmissionListSerializer(submissions, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

@@ -1220,26 +1220,30 @@ class AdminUserFormsView(generics.GenericAPIView):
         # Get all submissions for this user
         submissions = SurveySubmission.objects.filter(user=user).order_by('-submitted_at')
         
-        # Group by form type - filter based on permissions
+        # Group by form type (normalize to lowercase so 'Flip' / 'flip' both map to 'flip')
         forms_by_type = {
             'personal': [],
             'business': [],
             'rental': [],
+            'flip': [],
         }
         
         for submission in submissions:
-            form_type_name = submission.form_type
+            raw_type = (submission.form_type or '').strip()
+            form_type_key = raw_type.lower() if raw_type else ''
             # Check permissions for each form type
-            if form_type_name == 'personal' and not permissions.get('can_view_personal_organizer', False) and not permissions.get('is_super_admin', False):
+            if form_type_key == 'personal' and not permissions.get('can_view_personal_organizer', False) and not permissions.get('is_super_admin', False):
                 continue
-            if form_type_name == 'business' and not permissions.get('can_view_business_organizer', False) and not permissions.get('is_super_admin', False):
+            if form_type_key == 'business' and not permissions.get('can_view_business_organizer', False) and not permissions.get('is_super_admin', False):
                 continue
-            if form_type_name == 'rental' and not permissions.get('can_view_rental_organizer', False) and not permissions.get('is_super_admin', False):
+            if form_type_key == 'rental' and not permissions.get('can_view_rental_organizer', False) and not permissions.get('is_super_admin', False):
+                continue
+            if form_type_key == 'flip' and not permissions.get('can_view_flip_organizer', False) and not permissions.get('is_super_admin', False):
                 continue
             
-            if form_type_name in forms_by_type:
+            if form_type_key in forms_by_type:
                 serializer = SurveySubmissionListSerializer(submission)
-                forms_by_type[form_type_name].append(serializer.data)
+                forms_by_type[form_type_key].append(serializer.data)
         
         # Get engagement letter if it exists and user has permission
         engagement_letter = None
@@ -1255,6 +1259,47 @@ class AdminUserFormsView(generics.GenericAPIView):
         response_data['engagement_letter'] = engagement_letter
         
         return Response(response_data, status=status.HTTP_200_OK)
+
+
+class AdminReassignSubmissionView(generics.GenericAPIView):
+    """Reassign a submission from the current admin user to a target client (admin only)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        permissions = get_user_permissions(request.user)
+        is_admin = permissions.get('is_admin', False) or request.user.is_staff or request.user.is_superuser
+        if not is_admin:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        submission_id = request.data.get('submission_id')
+        form_type = request.data.get('form_type')
+        target_user_id = request.data.get('target_user_id')
+        if not submission_id or not form_type or target_user_id is None:
+            return Response(
+                {'error': 'submission_id, form_type, and target_user_id are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from survey_app.models import SurveySubmission
+        try:
+            submission = SurveySubmission.objects.get(
+                id=submission_id,
+                form_type=form_type,
+                user=request.user
+            )
+        except SurveySubmission.DoesNotExist:
+            return Response(
+                {'error': 'Submission not found or you do not own it'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        try:
+            target_user = User.objects.get(pk=int(target_user_id))
+        except (User.DoesNotExist, ValueError, TypeError):
+            return Response({'error': 'Target user not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        submission.user = target_user
+        submission.save(update_fields=['user'])
+        return Response({'message': 'Submission reassigned to client', 'id': str(submission.id)}, status=status.HTTP_200_OK)
 
 
 class RequestOTPView(generics.GenericAPIView):
@@ -1468,6 +1513,7 @@ def get_user_permissions(user):
             'can_view_personal_organizer': profile.can_view_personal_organizer,
             'can_view_business_organizer': profile.can_view_business_organizer,
             'can_view_rental_organizer': profile.can_view_rental_organizer,
+            'can_view_flip_organizer': profile.can_view_flip_organizer,
             'can_view_engagement_letter': profile.can_view_engagement_letter,
         }
     except UserProfile.DoesNotExist:
@@ -1478,6 +1524,7 @@ def get_user_permissions(user):
             'can_view_personal_organizer': False,
             'can_view_business_organizer': False,
             'can_view_rental_organizer': False,
+            'can_view_flip_organizer': False,
             'can_view_engagement_letter': False,
         }
 
@@ -1531,6 +1578,7 @@ class CreateAdminView(generics.GenericAPIView):
         profile.can_view_personal_organizer = serializer.validated_data.get('can_view_personal_organizer', False)
         profile.can_view_business_organizer = serializer.validated_data.get('can_view_business_organizer', False)
         profile.can_view_rental_organizer = serializer.validated_data.get('can_view_rental_organizer', False)
+        profile.can_view_flip_organizer = serializer.validated_data.get('can_view_flip_organizer', False)
         profile.can_view_engagement_letter = serializer.validated_data.get('can_view_engagement_letter', False)
         profile.save()
         
