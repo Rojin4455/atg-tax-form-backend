@@ -103,7 +103,7 @@ class SurveySubmissionCreateView(APIView):
                     add_ghl_contact_tag(submission_owner, "rental form submitted for pipeline")
                 elif form_type == 'flip':
                     add_ghl_contact_tag(submission_owner, "flip form submitted for pipeline")
-                add_ghl_submission_note(submission_owner, form_type, submission.id, timezone.now())
+                add_ghl_submission_note(submission_owner, form_type, submission.id, timezone.now(), submission_data=submission_data)
             
             return Response({"id": submission.id}, status=status.HTTP_201_CREATED)
             
@@ -215,7 +215,7 @@ class SurveySubmissionDetailView(APIView):
                 add_ghl_contact_tag(submission_owner, "rental form submitted for pipeline")
             elif form_type == 'flip':
                 add_ghl_contact_tag(submission_owner, "flip form submitted for pipeline")
-            add_ghl_submission_note(submission_owner, submission.form_type, submission.id, timezone.now())
+            add_ghl_submission_note(submission_owner, submission.form_type, submission.id, timezone.now(), submission_data=submission.submission_data)
         
         return Response({"message": "Submission updated"}, status=status.HTTP_200_OK)
     

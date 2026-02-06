@@ -481,10 +481,11 @@ def update_ghl_contact_for_tracker(ghl_contact_id,updated_tags,tracker_tag,heade
     print("tracker tag is added")
 
 
-def add_ghl_submission_note(user, form_type, submission_id, submitted_at):
+def add_ghl_submission_note(user, form_type, submission_id, submitted_at, submission_data=None):
     """
     Create a note on the GHL contact when an organizer is submitted.
     Note body format: "Personal Tax Organizer – Submitted: January 13, 2026 - Submission URL - {url}"
+    For business form only: appends " - EIN: XX-XXXXXXX" when submission_data contains basicInfo.ein.
     """
     try:
         profile = UserProfile.objects.get(user=user)
@@ -511,6 +512,23 @@ def add_ghl_submission_note(user, form_type, submission_id, submitted_at):
         date_str = submitted_at.strftime("%m/%d/%Y") if submitted_at else ""
 
         body = f"{label} – Submitted: {date_str} - Submission URL - {submission_url}"
+        if form_type == "business" and submission_data:
+            # Handle nested structure: submission_data might contain a nested 'submission_data' key
+            # (when sent from frontend) or be flat (when read from database)
+            form_data = submission_data
+            if isinstance(submission_data, dict) and "submission_data" in submission_data:
+                # Nested structure: extract the inner submission_data
+                form_data = submission_data.get("submission_data", {})
+            
+            # Extract EIN from basicInfo
+            if isinstance(form_data, dict):
+                basic_info = form_data.get("basicInfo", {})
+                if isinstance(basic_info, dict):
+                    ein = (basic_info.get("ein") or "").strip()
+                    if ein:
+                        body += f" - EIN: {ein}"
+
+        print(f"[GHL_NOTE] Note body: {body}")
 
         headers = {
             "Content-Type": "application/json",
