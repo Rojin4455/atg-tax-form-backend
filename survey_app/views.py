@@ -151,6 +151,9 @@ class SurveySubmissionDetailView(APIView):
         else:
             submission = get_object_or_404(SurveySubmission, id=id, form_type=form_type, user=request.user)
         
+        # Preserve the existing data so we can merge into it instead of overwriting
+        existing_data = submission.submission_data or {}
+
         # Handle both JSON and multipart form data
         if request.content_type.startswith('multipart/form-data'):
             # Extract form data from multipart request
@@ -183,17 +186,34 @@ class SurveySubmissionDetailView(APIView):
             form_name = request.data.get("form_name", submission.form_name)
             
             pdf_data = request.data.get("pdf_data")
-            submission_data = request.data
+            # Ensure we have a plain dict (DRF may give QueryDict)
+            submission_data = dict(request.data)
+
+        # Normalize status values coming from the frontend
+        if form_status == 'draft':
+            form_status = 'drafted'
+
+        # Prevent accidentally downgrading a submitted organizer back to draft/drafted
+        old_status = submission.status
+        if old_status == 'submitted' and form_status in ('draft', 'drafted', None, ''):
+            form_status = 'submitted'
         
         # Check if status is changing to 'submitted' (one-time tag addition)
-        old_status = submission.status
         is_newly_submitted = old_status != 'submitted' and form_status == 'submitted'
+
+        # Merge new data into existing submission_data so partial updates
+        # (e.g. section saves) do not wipe previously saved answers.
+        if isinstance(existing_data, dict) and isinstance(submission_data, dict):
+            merged_data = {**existing_data, **submission_data}
+        else:
+            # Fallback to incoming data if shapes are unexpected
+            merged_data = submission_data
         
         # Update submission
         submission.form_type = form_type
         submission.status = form_status
-        submission.form_name=form_name
-        submission.submission_data = submission_data
+        submission.form_name = form_name
+        submission.submission_data = merged_data
         submission.save()
         
         # Use submission owner for GHL (so client gets tags when admin fills for them)
