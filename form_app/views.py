@@ -940,6 +940,8 @@ class UserSignupView(generics.CreateAPIView):
             update_url = f"https://services.leadconnectorhq.com/contacts/{contact_id}"
             update_data = {
                 "email": user.email,
+                "firstName": user.first_name or "",
+                "lastName": user.last_name or "",
                 "customFields": [
                     {"id": "QmI5yIMWYdY17ijOr4ta", "field_value": user.username},
                     {"id": "nBDNBPX0gUFz7wqfTj51", "field_value": request.data.get("password")}
@@ -951,6 +953,8 @@ class UserSignupView(generics.CreateAPIView):
             create_url = "https://services.leadconnectorhq.com/contacts/"
             create_data = {
                 "email": user.email,
+                "firstName": user.first_name or "",
+                "lastName": user.last_name or "",
                 "locationId": location_id,
                 "customFields": [
                     {"id": "QmI5yIMWYdY17ijOr4ta", "field_value": user.username},

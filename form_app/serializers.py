@@ -347,17 +347,31 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework_simplejwt.tokens import RefreshToken
 
 
+def _generate_username_from_name(first_name, last_name):
+    """Generate a unique username from first_name and last_name (e.g. john_doe, john_doe_2)."""
+    import re
+    raw = f"{first_name or ''}_{last_name or ''}".strip('_').lower()
+    base = re.sub(r'[^\w]', '_', raw) or 'user'
+    base = base[:25]  # leave room for _N suffix
+    username = base
+    counter = 1
+    while User.objects.filter(username=username).exists():
+        username = f"{base}_{counter}"[:30]
+        counter += 1
+    return username
+
+
 class UserSignupSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        fields = ('username', 'email', 'password', 'password_confirm', 'first_name', 'last_name')
+        fields = ('email', 'password', 'password_confirm', 'first_name', 'last_name')
         extra_kwargs = {
             'email': {'required': True},
-            'first_name': {'required': False},
-            'last_name': {'required': False},
+            'first_name': {'required': True},
+            'last_name': {'required': True},
         }
 
     def validate(self, attrs):
@@ -372,6 +386,9 @@ class UserSignupSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop('password_confirm')
+        first_name = validated_data.get('first_name', '')
+        last_name = validated_data.get('last_name', '')
+        validated_data['username'] = _generate_username_from_name(first_name, last_name)
         user = User.objects.create_user(**validated_data)
         return user
 
