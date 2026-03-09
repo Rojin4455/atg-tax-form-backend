@@ -1098,8 +1098,14 @@ class AdminUserListView(generics.ListAPIView):
         queryset = User.objects.all().order_by('-date_joined')
         
         queryset = queryset.annotate(
-            annotated_draft_count=Count('surveysubmission', filter=Q(surveysubmission__status='drafted')),
-            annotated_submitted_count=Count('surveysubmission', filter=Q(surveysubmission__status='submitted')),
+            personal_draft_count=Count('surveysubmission', filter=Q(surveysubmission__status='drafted', surveysubmission__form_type__iexact='personal')),
+            personal_submitted_count=Count('surveysubmission', filter=Q(surveysubmission__status='submitted', surveysubmission__form_type__iexact='personal')),
+            business_draft_count=Count('surveysubmission', filter=Q(surveysubmission__status='drafted', surveysubmission__form_type__iexact='business')),
+            business_submitted_count=Count('surveysubmission', filter=Q(surveysubmission__status='submitted', surveysubmission__form_type__iexact='business')),
+            rental_draft_count=Count('surveysubmission', filter=Q(surveysubmission__status='drafted', surveysubmission__form_type__iexact='rental')),
+            rental_submitted_count=Count('surveysubmission', filter=Q(surveysubmission__status='submitted', surveysubmission__form_type__iexact='rental')),
+            flip_draft_count=Count('surveysubmission', filter=Q(surveysubmission__status='drafted', surveysubmission__form_type__iexact='flip')),
+            flip_submitted_count=Count('surveysubmission', filter=Q(surveysubmission__status='submitted', surveysubmission__form_type__iexact='flip')),
             annotated_engagement_letter_count=Count('taxengagementletter')
         )
         

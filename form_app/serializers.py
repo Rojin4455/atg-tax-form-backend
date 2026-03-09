@@ -451,13 +451,12 @@ class AdminLoginSerializer(serializers.Serializer):
 
 class UserProfileSerializer(serializers.ModelSerializer):
     profile = serializers.SerializerMethodField()
-    forms_draft_count = serializers.SerializerMethodField()
-    forms_submitted_count = serializers.SerializerMethodField()
+    forms_count = serializers.SerializerMethodField()
     engagement_letter_signed = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_active', 'is_staff', 'is_superuser', 'profile', 'forms_draft_count', 'forms_submitted_count', 'engagement_letter_signed')
+        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_active', 'is_staff', 'is_superuser', 'profile', 'forms_count', 'engagement_letter_signed')
         read_only_fields = ('id', 'username', 'date_joined')
     
     def get_engagement_letter_signed(self, obj):
@@ -467,19 +466,39 @@ class UserProfileSerializer(serializers.ModelSerializer):
             return len(obj.taxengagementletter_set.all()) > 0
         return obj.taxengagementletter_set.exists()
     
-    def get_forms_draft_count(self, obj):
-        if hasattr(obj, 'annotated_draft_count'):
-            return obj.annotated_draft_count
+    def get_forms_count(self, obj):
+        counts = {
+            'personal': {'draft': 0, 'submitted': 0},
+            'business': {'draft': 0, 'submitted': 0},
+            'rental': {'draft': 0, 'submitted': 0},
+            'flip': {'draft': 0, 'submitted': 0},
+        }
+        
+        if hasattr(obj, 'personal_draft_count'):
+            counts['personal']['draft'] = obj.personal_draft_count
+            counts['personal']['submitted'] = obj.personal_submitted_count
+            counts['business']['draft'] = obj.business_draft_count
+            counts['business']['submitted'] = obj.business_submitted_count
+            counts['rental']['draft'] = obj.rental_draft_count
+            counts['rental']['submitted'] = obj.rental_submitted_count
+            counts['flip']['draft'] = obj.flip_draft_count
+            counts['flip']['submitted'] = obj.flip_submitted_count
+            return counts
+            
         if hasattr(obj, '_prefetched_objects_cache') and 'surveysubmission_set' in obj._prefetched_objects_cache:
-            return sum(1 for s in obj.surveysubmission_set.all() if s.status == 'drafted')
-        return obj.surveysubmission_set.filter(status='drafted').count()
-
-    def get_forms_submitted_count(self, obj):
-        if hasattr(obj, 'annotated_submitted_count'):
-            return obj.annotated_submitted_count
-        if hasattr(obj, '_prefetched_objects_cache') and 'surveysubmission_set' in obj._prefetched_objects_cache:
-            return sum(1 for s in obj.surveysubmission_set.all() if s.status == 'submitted')
-        return obj.surveysubmission_set.filter(status='submitted').count()
+            submissions = obj.surveysubmission_set.all()
+        else:
+            submissions = obj.surveysubmission_set.all()
+            
+        for s in submissions:
+            rtype = (s.form_type or '').strip().lower()
+            if rtype in counts:
+                if s.status == 'drafted':
+                    counts[rtype]['draft'] += 1
+                elif s.status == 'submitted':
+                    counts[rtype]['submitted'] += 1
+                    
+        return counts
     
     def get_profile(self, obj):
         """Get UserProfile data if it exists"""
