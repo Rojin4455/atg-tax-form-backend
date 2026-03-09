@@ -3,7 +3,7 @@ from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from django.db.models import Q, Prefetch
+from django.db.models import Q, Prefetch, Count
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.conf import settings
@@ -901,6 +901,7 @@ def get_tokens_for_user(user):
 from accounts.models import GHLAuthCredentials
 import requests
 from survey_app.helpers import add_ghl_contact_tag
+
 class UserSignupView(generics.CreateAPIView):
     """User registration endpoint"""
     queryset = User.objects.all()
@@ -1096,6 +1097,12 @@ class AdminUserListView(generics.ListAPIView):
         
         queryset = User.objects.all().order_by('-date_joined')
         
+        queryset = queryset.annotate(
+            annotated_draft_count=Count('surveysubmission', filter=Q(surveysubmission__status='drafted')),
+            annotated_submitted_count=Count('surveysubmission', filter=Q(surveysubmission__status='submitted')),
+            annotated_engagement_letter_count=Count('taxengagementletter')
+        )
+        
         # Search functionality
         search = self.request.query_params.get('search', None)
         if search:
@@ -1112,9 +1119,15 @@ class AdminUserListView(generics.ListAPIView):
         queryset = self.get_queryset()
         
         # Calculate statistics from the full queryset (before pagination)
-        total_count = queryset.count()
-        active_count = queryset.filter(is_active=True).count()
-        inactive_count = queryset.filter(is_active=False).count()
+        query_total_count = queryset.count()
+        query_active_count = queryset.filter(is_active=True).count()
+        query_inactive_count = queryset.filter(is_active=False).count()
+        
+        # Calculate statistics from all users
+        all_users = User.objects.all()
+        total_count = all_users.count()
+        active_count = all_users.filter(is_active=True).count()
+        inactive_count = all_users.filter(is_active=False).count()
         
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -1126,16 +1139,26 @@ class AdminUserListView(generics.ListAPIView):
                 'active': active_count,
                 'inactive': inactive_count
             }
+            response.data['query_stats'] = {
+                'total': query_total_count,
+                'active': query_active_count,
+                'inactive': query_inactive_count
+            }
             return response
         
         serializer = self.get_serializer(queryset, many=True)
         return Response({
             'users': serializer.data,
-            'count': total_count,
+            'count': query_total_count,
             'stats': {
                 'total': total_count,
                 'active': active_count,
                 'inactive': inactive_count
+            },
+            'query_stats': {
+                'total': query_total_count,
+                'active': query_active_count,
+                'inactive': query_inactive_count
             }
         }, status=status.HTTP_200_OK)
 

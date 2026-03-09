@@ -451,11 +451,35 @@ class AdminLoginSerializer(serializers.Serializer):
 
 class UserProfileSerializer(serializers.ModelSerializer):
     profile = serializers.SerializerMethodField()
+    forms_draft_count = serializers.SerializerMethodField()
+    forms_submitted_count = serializers.SerializerMethodField()
+    engagement_letter_signed = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_active', 'is_staff', 'is_superuser', 'profile')
+        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_active', 'is_staff', 'is_superuser', 'profile', 'forms_draft_count', 'forms_submitted_count', 'engagement_letter_signed')
         read_only_fields = ('id', 'username', 'date_joined')
+    
+    def get_engagement_letter_signed(self, obj):
+        if hasattr(obj, 'annotated_engagement_letter_count'):
+            return obj.annotated_engagement_letter_count > 0
+        if hasattr(obj, '_prefetched_objects_cache') and 'taxengagementletter_set' in obj._prefetched_objects_cache:
+            return len(obj.taxengagementletter_set.all()) > 0
+        return obj.taxengagementletter_set.exists()
+    
+    def get_forms_draft_count(self, obj):
+        if hasattr(obj, 'annotated_draft_count'):
+            return obj.annotated_draft_count
+        if hasattr(obj, '_prefetched_objects_cache') and 'surveysubmission_set' in obj._prefetched_objects_cache:
+            return sum(1 for s in obj.surveysubmission_set.all() if s.status == 'drafted')
+        return obj.surveysubmission_set.filter(status='drafted').count()
+
+    def get_forms_submitted_count(self, obj):
+        if hasattr(obj, 'annotated_submitted_count'):
+            return obj.annotated_submitted_count
+        if hasattr(obj, '_prefetched_objects_cache') and 'surveysubmission_set' in obj._prefetched_objects_cache:
+            return sum(1 for s in obj.surveysubmission_set.all() if s.status == 'submitted')
+        return obj.surveysubmission_set.filter(status='submitted').count()
     
     def get_profile(self, obj):
         """Get UserProfile data if it exists"""
