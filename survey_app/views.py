@@ -25,6 +25,28 @@ def _is_admin_user(user):
         return False
 
 
+def _is_empty_or_default_form_data(data):
+    """
+    Return True if the form content is empty or default (all empty dicts/lists).
+    Used to avoid overwriting existing submission_data when client sends empty
+    (e.g. after a failed load or stale state).
+    """
+    if data is None:
+        return True
+    if not isinstance(data, dict):
+        return False
+    if len(data) == 0:
+        return True
+    for v in data.values():
+        if isinstance(v, dict) and len(v) > 0:
+            return False
+        if isinstance(v, list) and len(v) > 0:
+            return False
+        if v not in (None, "", {}, []):
+            return False
+    return True
+
+
 class SurveySubmissionCreateView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, JSONParser]  # Add parsers
@@ -208,6 +230,14 @@ class SurveySubmissionDetailView(APIView):
         else:
             # Fallback to incoming data if shapes are unexpected
             merged_data = submission_data
+
+        # Never overwrite stored form content with empty payload (prevents "blank form"
+        # when client sends default/empty after failed load or stale state).
+        incoming_form = merged_data.get("submission_data")
+        if _is_empty_or_default_form_data(incoming_form):
+            existing_form = existing_data.get("submission_data") if isinstance(existing_data, dict) else None
+            if existing_form is not None:
+                merged_data["submission_data"] = existing_form
         
         # Update submission
         submission.form_type = form_type
