@@ -354,6 +354,9 @@ class UserProfile(models.Model):
     business_form_url = models.URLField(blank=True, null=True)
     personal_form_url = models.URLField(blank=True, null=True)
     
+    # Onboarding status
+    onboard_required = models.BooleanField(default=True, help_text="Indicates if the user needs to complete the onboard profile")
+    
     # Admin and permission fields
     is_admin = models.BooleanField(default=False, help_text="Designates if this user is an admin")
     is_super_admin = models.BooleanField(default=False, help_text="Designates if this user is a super admin with full access")
@@ -373,3 +376,28 @@ class UserProfile(models.Model):
     
     def __str__(self):
         return f"{self.user.username} - {'Super Admin' if self.is_super_admin else 'Admin' if self.is_admin else 'User'}"
+
+class ClientProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="client_profile")
+    legal_name = models.CharField(max_length=255)
+    partners_name = models.CharField(max_length=255, blank=True, null=True)
+    num_businesses = models.IntegerField(default=0)
+    is_first_year = models.BooleanField(default=True)
+    has_smart_vault = models.BooleanField(default=False)
+    prior_year_return = models.URLField(max_length=1024, blank=True, null=True)
+    submitted_to_ghl = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"ClientProfile for {self.user.username}"
+
+
+class ClientBusiness(models.Model):
+    profile = models.ForeignKey(ClientProfile, related_name="businesses", on_delete=models.CASCADE)
+    name = models.CharField(max_length=255)
+    purpose = models.CharField(max_length=255)
+    assets = models.CharField(max_length=255)
+
+    def __str__(self):
+        return f"{self.name} ({self.profile.user.username})"

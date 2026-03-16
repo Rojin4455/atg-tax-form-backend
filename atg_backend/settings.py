@@ -176,12 +176,13 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': config("NAME"),
-        'USER': "postgres",
+        'USER': config("USER"),
         'PASSWORD': config("PASSWORD"),
         'HOST': config("HOST"),
         'PORT': '5432',
     }
 }
+
 
 
 # Password validation

@@ -12,6 +12,7 @@ urlpatterns = [
     path('signup/', views.UserSignupView.as_view(), name='user-signup'),
     path('login/', views.UserLoginView.as_view(), name='user-login'),
     path('logout/', views.UserLogoutView.as_view(), name='user-logout'),
+    path('client-profile/', views.ClientProfileView.as_view(), name='client-profile'),
     
     # Admin endpoints
     path('admin/login/', views.AdminLoginView.as_view(), name='admin-login'),

@@ -1,0 +1,17 @@
+<p style="margin:0px"><strong>Client Profile Submission Details</strong></p>
+<ul style="list-style-type: none; padding-left: 0;">
+    <li><strong>Number of Businesses:</strong> {{ num_businesses }}</li>
+</ul>
+
+{% if businesses %}
+<p style="margin:0px; margin-top: 3px;"><strong>Businesses:</strong></p>
+<ul style="list-style-type: disc;">
+    {% for business in businesses %}
+    <li style="margin-bottom: 1px;">
+        <strong>Name:</strong> {{ business.name }}<br>
+        <strong>Purpose:</strong> {{ business.purpose }}<br>
+        <strong>Assets:</strong> {{ business.assets }}
+    </li>
+    {% endfor %}
+</ul>
+{% endif %}

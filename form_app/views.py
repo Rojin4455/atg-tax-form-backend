@@ -12,13 +12,20 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import transaction
 from django.utils import timezone
 import json
+
+from rest_framework.parsers import MultiPartParser, FormParser
+
 from .models import (
     TaxFormSubmission, FormType, FormSection, FormQuestion,
     FormAnswer, FormSectionData, DependentInfo, BusinessOwnerInfo, FormAuditLog,
-    UserProfile
+    UserProfile, ClientProfile, ClientBusiness
 )
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_date
+from django.utils.timezone import is_aware, make_aware
 
+from accounts.models import GHLAuthCredentials
+from accounts.services import GHLContactServices
+from .utils import GHLCustomFields, get_ghl_file_upload_adapter
 from .serializers import (
     TaxFormSubmissionSerializer, TaxFormSubmissionCreateSerializer,
     UserSignupSerializer, 
@@ -984,6 +991,7 @@ class UserSignupView(generics.CreateAPIView):
                 'email': user.email,
                 'first_name': user.first_name,
                 'last_name': user.last_name,
+                'onboard_required': getattr(user.userprofile, 'onboard_required', True) if hasattr(user, 'userprofile') else True
             },
             'tokens': tokens
         }, status=status.HTTP_201_CREATED)
@@ -1013,6 +1021,7 @@ class UserLoginView(generics.GenericAPIView):
                 'last_name': user.last_name,
                 'is_staff': user.is_staff,
                 'is_superuser': user.is_superuser,
+                'onboard_required': getattr(user.userprofile, 'onboard_required', True) if hasattr(user, 'userprofile') else True
             },
             'permissions': permissions,
             'tokens': tokens
@@ -1770,3 +1779,149 @@ class AdminPermissionsView(generics.GenericAPIView):
     def get(self, request, *args, **kwargs):
         permissions = get_user_permissions(request.user)
         return Response(permissions, status=status.HTTP_200_OK)
+
+
+
+class ClientProfileView(generics.GenericAPIView):
+    """Endpoint to handle Client Profile submissions"""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        
+        legal_name = request.data.get('legalName', '')
+        partners_name = request.data.get('partnersName', '')
+        num_businesses = int(request.data.get('numBusinesses', 0))
+        is_first_year = True if request.data.get('isFirstYear', 'yes').lower() == 'yes' else False
+        has_smart_vault = True if request.data.get('hasSmartVault', 'no').lower() == 'yes' else False
+        prior_year_return = request.FILES.get('priorYearReturn')
+        businesses_data = request.data.get('businesses', '[]')
+        
+        try:
+            if isinstance(businesses_data, str):
+                businesses = json.loads(businesses_data)
+            else:
+                businesses = businesses_data
+        except:
+            businesses = []
+
+        try:
+            with transaction.atomic():
+                # Create or update ClientProfile
+                profile, created = ClientProfile.objects.update_or_create(
+                    user=user,
+                    defaults={
+                        'legal_name': legal_name,
+                        'partners_name': partners_name,
+                        'num_businesses': num_businesses,
+                        'is_first_year': is_first_year,
+                        'has_smart_vault': has_smart_vault,
+                    }
+                )
+
+                ghl_contact_id = getattr(user.userprofile, 'ghl_contact_id', None)
+                cred = None
+
+                if ghl_contact_id:
+                    cred = GHLAuthCredentials.objects.first()
+                    if cred and cred.access_token:
+                        ghl_service = GHLContactServices(cred.access_token, cred.location_id)
+
+                        # Base custom fields payload
+                        contact_custom_fields = [
+                            {
+                                "id": GHLCustomFields.LEGAL_NAME["id"],
+                                "key": GHLCustomFields.LEGAL_NAME["field_key"],
+                                "field_value": legal_name
+                            },
+                            {
+                                "id": GHLCustomFields.PARTNERS_NAME["id"],
+                                "key": GHLCustomFields.PARTNERS_NAME["field_key"],
+                                "field_value": partners_name
+                            },
+                            {
+                                "id": GHLCustomFields.NUMBER_OF_BUSINESSES["id"],
+                                "key": GHLCustomFields.NUMBER_OF_BUSINESSES["field_key"],
+                                "field_value": num_businesses
+                            },
+                            {
+                                "id": GHLCustomFields.IS_FIRST_YEAR["id"],
+                                "key": GHLCustomFields.IS_FIRST_YEAR["field_key"],
+                                "field_value": "yes" if is_first_year else "no"
+                            },
+                            {
+                                "id":GHLCustomFields.HAS_SMART_VAULT["id"],
+                                "key":GHLCustomFields.HAS_SMART_VAULT["field_key"],
+                                "field_value": "yes" if has_smart_vault else "no"
+                            }
+                        ]
+
+                        # Handle File Upload — raises on GHL failure
+                        if prior_year_return:
+                            upload_strategy = get_ghl_file_upload_adapter(use_media_upload=True)
+                            file_url, field_value = upload_strategy.upload_and_format_custom_field(
+                                ghl_service=ghl_service,
+                                file_name=prior_year_return.name,
+                                file_content=prior_year_return.read(),
+                                mime_type=prior_year_return.content_type,
+                                entity_id=GHLCustomFields.PRIOR_YEAR_TAX_RETURN["id"]
+                            )
+
+                            if file_url:
+                                profile.prior_year_return = file_url
+                                profile.save()
+
+                                contact_custom_fields.append({
+                                    "id": GHLCustomFields.PRIOR_YEAR_TAX_RETURN["id"],
+                                    "key": GHLCustomFields.PRIOR_YEAR_TAX_RETURN["field_key"],
+                                    "field_value": field_value
+                                })
+                        else:
+                            profile.prior_year_return = None
+                            profile.save()
+
+                        # Update Contact Custom Fields in GHL — raises on failure
+                        ghl_service.update_contact(ghl_contact_id, {"customFields": contact_custom_fields})
+                else:
+                    if prior_year_return:
+                        profile.prior_year_return = None
+                        profile.save()
+
+                # Update businesses
+                profile.businesses.all().delete()
+                for b in businesses:
+                    if isinstance(b, dict):
+                        ClientBusiness.objects.create(
+                            profile=profile,
+                            name=b.get('name', ''),
+                            purpose=b.get('purpose', ''),
+                            assets=b.get('assets', '')
+                        )
+
+                # Mark onboarding complete
+                if hasattr(user, 'userprofile'):
+                    user.userprofile.onboard_required = False
+                    user.userprofile.save()
+
+                # Push note to GHL with Business Details — raises on failure
+                if ghl_contact_id and cred and cred.access_token:
+                    from django.template.loader import render_to_string
+                    note_body = render_to_string('form_app/client_profile_ghl_note.html', {
+                        'num_businesses': num_businesses,
+                        'businesses': businesses
+                    })
+                    ghl_service.create_note(ghl_contact_id, user_id=cred.location_id, body=note_body)
+
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"ClientProfile submission failed: {e}")
+            return Response(
+                {"error": "Failed to sync with CRM. Please try again.", "detail": str(e)},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        return Response({
+            "message": "Profile completed successfully!",
+            "profile_id": profile.id
+        }, status=status.HTTP_201_CREATED)

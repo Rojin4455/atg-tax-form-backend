@@ -4,7 +4,7 @@ from datetime import datetime
 import pytz
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from accounts.models import Opportunity, GHLAuthCredentials,Contact  # Replace 'myapp' with your actual app name
+from accounts.models import Opportunity, GHLAuthCredentials, Contact, CustomField
 import logging
 
 import time
@@ -16,16 +16,22 @@ from django.db import transaction
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+GHL_BASE_URL = "https://services.leadconnectorhq.com"
+
+def get_ghl_headers(access_token):
+    return {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {access_token}',
+        'Version': '2021-07-28'
+    }
+
 class GHLOpportunityFetcher:
     def __init__(self, access_token, location_id):
         self.access_token = access_token
         self.location_id = location_id
-        self.base_url = "https://services.leadconnectorhq.com"
-        self.headers = {
-            'Accept': 'application/json',
-            'Authorization': f'Bearer {self.access_token}',
-            'Version': '2021-07-28'
-        }
+        self.base_url = GHL_BASE_URL
+        self.headers = get_ghl_headers(self.access_token)
         
         # Pipeline mappings
         self.pipelines = {
@@ -473,12 +479,8 @@ def fetch_all_contacts() -> List[Dict[str, Any]]:
     access_token = token.access_token
     
     
-    base_url = "https://services.leadconnectorhq.com/contacts/"
-    headers = {
-        "Accept": "application/json",
-        "Authorization": f"Bearer {access_token}",
-        "Version": "2021-07-28"
-    }
+    base_url = f"{GHL_BASE_URL}/contacts/"
+    headers = get_ghl_headers(access_token)
     
     all_contacts = []
     start_after = None
@@ -740,4 +742,197 @@ def sync_contacts_to_db(contact_data):
     # Let's adjust the final prints:
     print("Sync complete.")
 
+class GHLCustomFieldServices:
+    def __init__(self, access_token, location_id):
+        self.access_token = access_token
+        self.location_id = location_id
+        self.base_url = GHL_BASE_URL
+        self.headers = get_ghl_headers(self.access_token)
 
+    def get_customfields(self, model=None):
+        """
+        Fetch custom fields from GoHighLevel API for a specific location_id.
+        """
+        model = model or "all"
+        logger.info(f"Getting custom fields of {model} in {self.location_id}")
+        
+        url = f"{self.base_url}/locations/{self.location_id}/customFields"
+        params = {"model": model}
+        
+        try:
+            response = requests.get(url, headers=self.headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"API request failed: {e}")
+            raise Exception(f"API request failed for custom fields: {e}")
+
+    def pull_customfields(self, model="all"):
+        """
+        Pull custom fields for the initialized location and save them.
+        """
+        import_summary = []
+        try:
+            response_data = self.get_customfields(model=model)
+            custom_fields = response_data.get("customFields", [])
+            self._save_customfields(custom_fields)
+            import_summary.append(f"{self.location_id}: Imported {len(custom_fields)} custom fields")
+        except Exception as e:
+            import_summary.append(f"{self.location_id}: Failed to import custom fields - {str(e)}")
+            
+        return import_summary
+
+    def _save_customfields(self, fields):
+        """
+        Save or update custom fields in the database.
+        """
+        for field in fields:
+            try:
+                date_added_str = field.get("dateAdded")
+                if date_added_str:
+                    date_added = datetime.fromisoformat(date_added_str.replace("Z", "+00:00"))
+                else:
+                    date_added = timezone.now()
+                    
+                CustomField.objects.update_or_create(
+                    id=field["id"],
+                    defaults={
+                        "name": field["name"],
+                        "model_name": field["model"],
+                        "field_key": field["fieldKey"],
+                        "placeholder": field.get("placeholder", ""),
+                        "data_type": field["dataType"],
+                        "parent_id": field.get("parentId", ""),
+                        "location_id": field["locationId"],
+                        "date_added": date_added,
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Error saving custom field {field.get('id')}: {str(e)}")
+                logger.error(f"Field data: {json.dumps(field, indent=4)}")
+
+def pull_all_customfields_standalone(model="all"):
+    """
+    Helper function to pull custom fields for all available GHL auth credentials.
+    """
+    import_summary = []
+    location_ids = GHLAuthCredentials.objects.values_list('location_id', flat=True).distinct()
+    
+    for loc_id in location_ids:
+        if loc_id:
+            cred = GHLAuthCredentials.objects.filter(location_id=loc_id).first()
+            if cred and cred.access_token:
+                service = GHLCustomFieldServices(access_token=cred.access_token, location_id=cred.location_id)
+                summary = service.pull_customfields(model=model)
+                import_summary.extend(summary)
+            
+    return import_summary
+
+class GHLContactServices:
+    def __init__(self, access_token, location_id):
+        self.access_token = access_token
+        self.location_id = location_id
+        self.base_url = GHL_BASE_URL
+        self.headers = get_ghl_headers(self.access_token)
+        # Multipart uploads must not have Content-Type set; requests handles it
+        self.upload_headers = {k: v for k, v in self.headers.items() if k != 'Content-Type'}
+
+    def create_note(self, contact_id, user_id, body):
+        """
+        Create a note for a specific contact in GoHighLevel.
+        """
+        logger.info(f"Creating note for contact {contact_id} by user {user_id}")
+        
+        url = f"{self.base_url}/contacts/{contact_id}/notes"
+        payload = {
+            "userId": user_id,
+            "body": body
+        }
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=payload)
+            # if not (200 <= response.status_code < 300):
+            #     logger.error(f"Failed to create note for contact {contact_id}: {response.status_code} {response.text}")
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to create note for contact {contact_id}: {e}")
+            raise Exception(f"API request failed for creating note: {e}")
+
+    def update_contact(self, contact_id, contact_data):
+        """
+        Update a specific contact in GoHighLevel.
+        """
+        logger.info(f"Updating contact {contact_id}")
+        
+        url = f"{self.base_url}/contacts/{contact_id}"
+        
+        try:
+            response = requests.put(url, headers=self.headers, json=contact_data)
+            # if not (200 <= response.status_code < 300):
+            #     logger.error(f"Failed to update contact {contact_id}: {response.status_code} {response.text}")
+            response.raise_for_status()
+            # logger.info(f"Contact updated successfully: {response.json()}")
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to update contact {contact_id}: {e}")
+            raise Exception(f"API request failed for updating contact: {e}")
+
+    def upload_media_file(self, file_name: str, file_content: bytes, mime_type: str = "application/pdf") -> dict:
+        """
+        Uploads a media file to GoHighLevel.
+        """
+        logger.info(f"Uploading media file {file_name}")
+        
+        url = f"{self.base_url}/medias/upload-file"
+
+        data = {
+            "hosted": "false",
+            "name": file_name
+        }
+        
+        files = {
+            "file": (file_name, file_content, mime_type)
+        }
+        
+        try:
+            logger.info(f"Uploading media file {file_name} to {url}")
+            response = requests.post(url, headers=self.upload_headers, data=data, files=files)
+            # if not (200 <= response.status_code < 300):
+            #     logger.error(f"Failed to upload media file {file_name}: {response.status_code} {response.text}")
+            response.raise_for_status()
+            # logger.info(f"Media file uploaded successfully: {response.json()}")
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to upload media file {file_name}: {e}")
+            raise Exception(f"API request failed for media file upload: {e}")
+
+    def upload_custom_field_file(self, entity_id: str, file_name: str, file_content: bytes, mime_type: str = "application/octet-stream", max_files: str = "15") -> dict:
+        """
+        Uploads a file to a custom field in GoHighLevel.
+        """
+        logger.info(f"Uploading file for entity {entity_id} in location {self.location_id}")
+        
+        url = f"{self.base_url}/locations/{self.location_id}/customFields/upload"
+
+        data = {
+            "id": str(entity_id),
+            "maxFiles": str(max_files)
+        }
+        
+
+        files = {
+            "file": (file_name, file_content, mime_type)
+        }
+        
+        try:
+            logger.info(f"Uploading file for entity {entity_id} to {url}")
+            response = requests.post(url, headers=self.upload_headers, data=data, files=files)
+            # if not (200 <= response.status_code < 300):
+            #     logger.error(f"Failed to upload file for entity {entity_id}: {response.status_code} {response.text}")
+            response.raise_for_status()
+            # logger.info(f"File uploaded successfully: {response.json()}")
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to upload file for entity {entity_id}: {e}")
+            raise Exception(f"API request failed for file upload: {e}")
