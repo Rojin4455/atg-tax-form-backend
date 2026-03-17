@@ -349,6 +349,7 @@ class FormAuditLog(models.Model):
 
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
+    identifier = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     ghl_contact_id = models.CharField(max_length=55, blank=True, null=True)
     rental_form_url = models.URLField(blank=True, null=True)
     business_form_url = models.URLField(blank=True, null=True)
@@ -382,9 +383,7 @@ class ClientProfile(models.Model):
     legal_name = models.CharField(max_length=255)
     partners_name = models.CharField(max_length=255, blank=True, null=True)
     num_businesses = models.IntegerField(default=0)
-    is_first_year = models.BooleanField(default=True)
     has_smart_vault = models.BooleanField(default=False)
-    prior_year_return = models.URLField(max_length=1024, blank=True, null=True)
     submitted_to_ghl = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -398,6 +397,8 @@ class ClientBusiness(models.Model):
     name = models.CharField(max_length=255)
     purpose = models.CharField(max_length=255)
     assets = models.CharField(max_length=255)
+    is_first_year = models.BooleanField(default=True)
+    prior_year_return = models.URLField(max_length=1024, blank=True, null=True)
 
     def __str__(self):
         return f"{self.name} ({self.profile.user.username})"

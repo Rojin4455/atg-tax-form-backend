@@ -10,7 +10,11 @@
     <li style="margin-bottom: 1px;">
         <strong>Name:</strong> {{ business.name }}<br>
         <strong>Purpose:</strong> {{ business.purpose }}<br>
-        <strong>Assets:</strong> {{ business.assets }}
+        <strong>Assets:</strong> {{ business.assets }}<br>
+        <strong>First Year Filing:</strong> {{ business.is_first_year }}<br>
+        {% if business.prior_year_return_url %}
+        <strong>Prior-Year Tax Return:</strong> <a href="{{ business.prior_year_return_url }}">{{ business.prior_year_return_url }}</a>
+        {% endif %}
     </li>
     {% endfor %}
 </ul>

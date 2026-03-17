@@ -632,3 +632,35 @@ class SubmitOTPSerializer(serializers.Serializer):
         
         attrs['user'] = user
         return attrs
+
+
+# ── Client Profile serializers ────────────────────────────────────────────────
+
+class ClientBusinessSerializer(serializers.ModelSerializer):
+    class Meta:
+        from .models import ClientBusiness
+        model = ClientBusiness
+        fields = ('id', 'name', 'purpose', 'assets', 'is_first_year', 'prior_year_return')
+
+
+class ClientProfileDetailSerializer(serializers.ModelSerializer):
+    """Read-only detail serializer for ClientProfile, including nested businesses."""
+    businesses = ClientBusinessSerializer(many=True, read_only=True)
+    identifier = serializers.UUIDField(source='user.userprofile.identifier', read_only=True)
+
+    class Meta:
+        from .models import ClientProfile
+        model = ClientProfile
+        fields = (
+            'id',
+            'identifier',
+            'legal_name',
+            'partners_name',
+            'num_businesses',
+            'has_smart_vault',
+            'submitted_to_ghl',
+            'businesses',
+            'created_at',
+            'updated_at',
+        )
+        read_only_fields = fields

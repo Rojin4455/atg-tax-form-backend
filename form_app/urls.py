@@ -13,6 +13,7 @@ urlpatterns = [
     path('login/', views.UserLoginView.as_view(), name='user-login'),
     path('logout/', views.UserLogoutView.as_view(), name='user-logout'),
     path('client-profile/', views.ClientProfileView.as_view(), name='client-profile'),
+    path('client-profile/<uuid:identifier>/', views.ClientProfileView.as_view(), name='client-profile-detail'),
     
     # Admin endpoints
     path('admin/login/', views.AdminLoginView.as_view(), name='admin-login'),
