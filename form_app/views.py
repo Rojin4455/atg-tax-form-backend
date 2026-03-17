@@ -1941,7 +1941,7 @@ class ClientProfileView(generics.GenericAPIView):
         except Exception as e:
             logger.error(f"ClientProfile submission failed: {e}")
             return Response(
-                {"error": "Failed to sync with CRM. Please try again.", "detail": str(e)},
+                {"error": "Failed to Submit. Please try again.", "detail": str(e)},
                 status=status.HTTP_502_BAD_GATEWAY
             )
 
