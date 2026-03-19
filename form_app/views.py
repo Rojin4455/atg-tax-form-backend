@@ -1897,18 +1897,18 @@ class ClientProfileView(generics.GenericAPIView):
 
                     # Upload per-business file to GHL media and store the URL
                     b_prior_year_url = None
-                    if pyr_file and ghl_service:
-                        try:
-                            b_file_url, _ = upload_strategy.upload_and_format_custom_field(
-                                ghl_service=ghl_service,
-                                file_name=pyr_file.name,
-                                file_content=pyr_file.read(),
-                                mime_type=pyr_file.content_type,
-                                entity_id=GHLCustomFields.PRIOR_YEAR_TAX_RETURN["id"]
-                            )
-                            b_prior_year_url = b_file_url
-                        except Exception as e:
-                            logger.warning(f"Failed to upload prior year return for business {i}: {e}")
+                    # if pyr_file and ghl_service:
+                    #     try:
+                    #         b_file_url, _ = upload_strategy.upload_and_format_custom_field(
+                    #             ghl_service=ghl_service,
+                    #             file_name=pyr_file.name,
+                    #             file_content=pyr_file.read(),
+                    #             mime_type=pyr_file.content_type,
+                    #             entity_id=GHLCustomFields.PRIOR_YEAR_TAX_RETURN["id"]
+                    #         )
+                    #         b_prior_year_url = b_file_url
+                    #     except Exception as e:
+                    #         logger.warning(f"Failed to upload prior year return for business {i}: {e}")
 
                     ClientBusiness.objects.create(
                         profile=profile,
