@@ -402,3 +402,66 @@ class ClientBusiness(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.profile.user.username})"
+
+
+class EstatePlanningSubmission(models.Model):
+    """Estate planning questionnaire — one draft + unlimited submitted per user."""
+
+    STATUS_DRAFT = 'draft'
+    STATUS_SUBMITTED = 'submitted'
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('submitted', 'Submitted'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='estate_submissions'
+    )
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT
+    )
+    current_step = models.PositiveIntegerField(
+        default=1, help_text='Last step the client was on'
+    )
+
+    # One JSON column per form step
+    step1_personal = models.JSONField(
+        default=dict, blank=True, verbose_name='Step 1 — Personal Information'
+    )
+    step2_heirs_legal = models.JSONField(
+        default=dict, blank=True, verbose_name='Step 2 — Heirs & Legal'
+    )
+    step3_distribution = models.JSONField(
+        default=dict, blank=True, verbose_name='Step 3 — Trust Distribution'
+    )
+    step4_financials = models.JSONField(
+        default=dict, blank=True, verbose_name='Step 4 — Financial, Business & Property'
+    )
+
+    # Internal staff notes — writable by admin only
+    staff_notes = models.TextField(blank=True)
+
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+        verbose_name = 'Estate Planning Submission'
+        verbose_name_plural = 'Estate Planning Submissions'
+        constraints = [
+            # Enforce one draft per user at the database level
+            models.UniqueConstraint(
+                fields=['user'],
+                condition=models.Q(status='draft'),
+                name='unique_draft_per_user_estate',
+            )
+        ]
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['status', 'updated_at']),
+        ]
+
+    def __str__(self):
+        return f"Estate[{self.status}] — {self.user.username} ({self.id})"

@@ -1949,3 +1949,121 @@ class ClientProfileView(generics.GenericAPIView):
             "message": "Profile completed successfully!",
             "profile_id": profile.id
         }, status=status.HTTP_201_CREATED)
+
+
+# ─── Estate Planning ──────────────────────────────────────────────────────────
+
+from .models import EstatePlanningSubmission
+from .estate_serializers import (
+    EstatePlanningSubmissionSerializer,
+    EstatePlanningSubmissionStaffSerializer,
+)
+
+
+class EstatePlanningViewSet(viewsets.ViewSet):
+    """
+    Estate planning form — auto-save + submit.
+
+    GET    /estate-planning/              → get or create the user's draft
+    PATCH  /estate-planning/{id}/        → auto-save (partial update)
+    POST   /estate-planning/{id}/submit/ → finalise draft → submitted
+    GET    /estate-planning/history/     → all submitted records for the user
+    GET    /estate-planning/all/         → staff-only list of all submissions
+    PATCH  /estate-planning/{id}/staff-edit/ → staff edits any submission
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _get_serializer(self, request, *args, **kwargs):
+        if request.user.is_staff:
+            return EstatePlanningSubmissionStaffSerializer(*args, **kwargs)
+        return EstatePlanningSubmissionSerializer(*args, **kwargs)
+
+    # ── GET /estate-planning/ ─────────────────────────────────────────────────
+    def list(self, request):
+        """Return the user's current draft, creating one if none exists."""
+        draft, created = EstatePlanningSubmission.objects.get_or_create(
+            user=request.user,
+            status=EstatePlanningSubmission.STATUS_DRAFT,
+        )
+        serializer = self._get_serializer(request, draft)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # ── PATCH /estate-planning/{id}/ ──────────────────────────────────────────
+    def partial_update(self, request, pk=None):
+        """Auto-save: update any subset of step fields + current_step."""
+        try:
+            submission = EstatePlanningSubmission.objects.get(pk=pk)
+        except EstatePlanningSubmission.DoesNotExist:
+            return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Only owner or staff allowed
+        if submission.user != request.user and not request.user.is_staff:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = self._get_serializer(request, submission, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # ── POST /estate-planning/{id}/submit/ ────────────────────────────────────
+    @action(detail=True, methods=['post'])
+    def submit(self, request, pk=None):
+        """Finalise the draft: status → submitted, records submitted_at."""
+        try:
+            submission = EstatePlanningSubmission.objects.get(
+                pk=pk, user=request.user, status=EstatePlanningSubmission.STATUS_DRAFT
+            )
+        except EstatePlanningSubmission.DoesNotExist:
+            return Response(
+                {'error': 'Draft not found or already submitted.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        submission.status = EstatePlanningSubmission.STATUS_SUBMITTED
+        submission.submitted_at = timezone.now()
+        submission.save(update_fields=['status', 'submitted_at', 'updated_at'])
+
+        serializer = self._get_serializer(request, submission)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # ── GET /estate-planning/history/ ─────────────────────────────────────────
+    @action(detail=False, methods=['get'])
+    def history(self, request):
+        """List all submitted submissions for the current user."""
+        qs = EstatePlanningSubmission.objects.filter(
+            user=request.user,
+            status=EstatePlanningSubmission.STATUS_SUBMITTED,
+        )
+        serializer = self._get_serializer(request, qs, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # ── GET /estate-planning/all/ (staff only) ────────────────────────────────
+    @action(detail=False, methods=['get'])
+    def all(self, request):
+        """Staff-only: list every submission across all users."""
+        if not request.user.is_staff:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        qs = EstatePlanningSubmission.objects.select_related('user').all()
+        serializer = EstatePlanningSubmissionStaffSerializer(qs, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # ── PATCH /estate-planning/{id}/staff-edit/ ───────────────────────────────
+    @action(detail=True, methods=['patch'])
+    def staff_edit(self, request, pk=None):
+        """Staff can edit any submission (including submitted ones)."""
+        if not request.user.is_staff:
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            submission = EstatePlanningSubmission.objects.get(pk=pk)
+        except EstatePlanningSubmission.DoesNotExist:
+            return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = EstatePlanningSubmissionStaffSerializer(
+            submission, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)

@@ -33,7 +33,7 @@ SECRET_KEY = config("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['51.20.18.110', "localhost", "127.0.0.1","13.60.188.253",'organizers.advancedtaxgroup.com','tools.advancedtaxgroup.com','13.53.249.49','questionnaire.advancedtaxgroup.com']
+ALLOWED_HOSTS = ['51.20.18.110', "localhost", "127.0.0.1","13.60.188.253",'organizers.advancedtaxgroup.com','tools.advancedtaxgroup.com','trust.advancedtaxgroup.com','13.53.249.49','questionnaire.advancedtaxgroup.com']
 
 
 # Application definition
@@ -82,6 +82,7 @@ CORS_ALLOWED_ORIGINS = [
     'https://tools.advancedtaxgroup.com',
     'https://questionnaire.advancedtaxgroup.com',
     'http://13.53.249.49',
+    'https://trust.advancedtaxgroup.com',
 ]
 
 CSRF_TRUSTED_ORIGINS = [
