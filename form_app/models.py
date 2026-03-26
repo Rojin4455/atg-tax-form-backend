@@ -465,3 +465,30 @@ class EstatePlanningSubmission(models.Model):
 
     def __str__(self):
         return f"Estate[{self.status}] — {self.user.username} ({self.id})"
+
+
+class SSOCode(models.Model):
+    """
+    Short-lived, single-use code for backend-orchestrated SSO.
+
+    Issued by App1 via /sso/issue-code/ (authenticated).
+    Exchanged by App2 via /sso/exchange/ (anonymous) for JWT tokens + user details.
+    Expires after 5 minutes; can only be used once.
+    """
+    code = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sso_codes')
+    used = models.BooleanField(default=False)
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'SSO Code'
+        verbose_name_plural = 'SSO Codes'
+        indexes = [models.Index(fields=['code', 'used'])]
+
+    def is_valid(self) -> bool:
+        from django.utils import timezone
+        return not self.used and self.expires_at > timezone.now()
+
+    def __str__(self):
+        return f"SSOCode({self.code}) — {self.user.username} used={self.used}"

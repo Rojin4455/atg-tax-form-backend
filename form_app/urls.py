@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from form_app import views
+from form_app.sso_views import SSOIssueCodeView, SSOExchangeView
 from rest_framework_simplejwt.views import TokenRefreshView
 
 
@@ -37,4 +38,8 @@ urlpatterns = [
     
     # Token refresh
     path('token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
+
+    # SSO — backend-orchestrated single-sign-on
+    path('sso/issue-code/', SSOIssueCodeView.as_view(), name='sso-issue-code'),
+    path('sso/exchange/',   SSOExchangeView.as_view(),  name='sso-exchange'),
 ]
