@@ -74,8 +74,6 @@ ROOT_URLCONF = 'atg_backend.urls'
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
-    r"^https?://localhost(:\d+)?$",
-    r"^https?://127\.0\.0\.1(:\d+)?$",
     "http://13.60.188.253",
     'https://main.d105x1k2m8q5hv.amplifyapp.com',
     'https://preview--organizer-ui-kit.lovable.app',
@@ -85,9 +83,15 @@ CORS_ALLOWED_ORIGINS = [
     'http://13.53.249.49',
     'https://trust.advancedtaxgroup.com',
 ]
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https?://localhost(:\d+)?$",
+    r"^https?://127\.0\.0\.1(:\d+)?$",
+]
 
 CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
     "http://localhost:8080",
+    "http://localhost:8081",
     "http://13.60.188.253",
     "https://main.d105x1k2m8q5hv.amplifyapp.com",
     "https://preview--organizer-ui-kit.lovable.app",
