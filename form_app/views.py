@@ -1968,8 +1968,11 @@ class EstatePlanningViewSet(viewsets.ViewSet):
     PATCH  /estate-planning/{id}/        → auto-save (partial update)
     POST   /estate-planning/{id}/submit/ → finalise draft → submitted
     GET    /estate-planning/history/     → all submitted records for the user
-    GET    /estate-planning/all/         → staff-only list of all submissions
-    PATCH  /estate-planning/{id}/staff-edit/ → staff edits any submission
+    GET    /estate-planning/all/               → staff-only list (filters + ordering)
+    GET    /estate-planning/{id}/staff-detail/ → staff view any submission
+    PATCH  /estate-planning/{id}/staff-edit/   → staff edits any submission
+    PUT    /estate-planning/{id}/staff-edit/   → staff full update any submission
+    DELETE /estate-planning/{id}/staff-delete/ → staff delete any submission
     """
 
     permission_classes = [IsAuthenticated]
@@ -1978,6 +1981,63 @@ class EstatePlanningViewSet(viewsets.ViewSet):
         if request.user.is_staff:
             return EstatePlanningSubmissionStaffSerializer(*args, **kwargs)
         return EstatePlanningSubmissionSerializer(*args, **kwargs)
+
+    def _require_staff(self, request):
+        if request.user.is_staff:
+            return None
+        return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+    def _staff_queryset(self, request):
+        """
+        Staff query options for /all/:
+          - status=draft|submitted
+          - user_id=<int>
+          - username=<contains>
+          - email=<contains>
+          - q=<contains username/email/staff_notes>
+          - ordering=created_at|-created_at|updated_at|-updated_at|submitted_at|-submitted_at|status
+        """
+        qs = EstatePlanningSubmission.objects.select_related('user').all()
+
+        status_param = request.query_params.get('status')
+        if status_param in {EstatePlanningSubmission.STATUS_DRAFT, EstatePlanningSubmission.STATUS_SUBMITTED}:
+            qs = qs.filter(status=status_param)
+
+        user_id = request.query_params.get('user_id')
+        if user_id:
+            qs = qs.filter(user_id=user_id)
+
+        username = request.query_params.get('username')
+        if username:
+            qs = qs.filter(user__username__icontains=username)
+
+        email = request.query_params.get('email')
+        if email:
+            qs = qs.filter(user__email__icontains=email)
+
+        q = request.query_params.get('q')
+        if q:
+            qs = qs.filter(
+                Q(user__username__icontains=q)
+                | Q(user__email__icontains=q)
+                | Q(staff_notes__icontains=q)
+            )
+
+        allowed_ordering = {
+            'created_at',
+            '-created_at',
+            'updated_at',
+            '-updated_at',
+            'submitted_at',
+            '-submitted_at',
+            'status',
+            '-status',
+        }
+        ordering = request.query_params.get('ordering')
+        if ordering in allowed_ordering:
+            qs = qs.order_by(ordering)
+
+        return qs
 
     # ── GET /estate-planning/ ─────────────────────────────────────────────────
     def list(self, request):
@@ -2042,19 +2102,37 @@ class EstatePlanningViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['get'])
     def all(self, request):
         """Staff-only: list every submission across all users."""
-        if not request.user.is_staff:
-            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        forbidden = self._require_staff(request)
+        if forbidden:
+            return forbidden
 
-        qs = EstatePlanningSubmission.objects.select_related('user').all()
+        qs = self._staff_queryset(request)
         serializer = EstatePlanningSubmissionStaffSerializer(qs, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    # ── GET /estate-planning/{id}/staff-detail/ ───────────────────────────────
+    @action(detail=True, methods=['get'])
+    def staff_detail(self, request, pk=None):
+        """Staff can view any submission by id."""
+        forbidden = self._require_staff(request)
+        if forbidden:
+            return forbidden
+
+        try:
+            submission = EstatePlanningSubmission.objects.select_related('user').get(pk=pk)
+        except EstatePlanningSubmission.DoesNotExist:
+            return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = EstatePlanningSubmissionStaffSerializer(submission)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     # ── PATCH /estate-planning/{id}/staff-edit/ ───────────────────────────────
-    @action(detail=True, methods=['patch'])
+    @action(detail=True, methods=['patch', 'put'])
     def staff_edit(self, request, pk=None):
         """Staff can edit any submission (including submitted ones)."""
-        if not request.user.is_staff:
-            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        forbidden = self._require_staff(request)
+        if forbidden:
+            return forbidden
 
         try:
             submission = EstatePlanningSubmission.objects.get(pk=pk)
@@ -2062,8 +2140,28 @@ class EstatePlanningViewSet(viewsets.ViewSet):
             return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
         serializer = EstatePlanningSubmissionStaffSerializer(
-            submission, data=request.data, partial=True
+            submission,
+            data=request.data,
+            partial=(request.method.lower() == 'patch'),
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # ── DELETE /estate-planning/{id}/staff-delete/ ────────────────────────────
+    @action(detail=True, methods=['delete'])
+    def staff_delete(self, request, pk=None):
+        """Staff can delete any submission."""
+        forbidden = self._require_staff(request)
+        if forbidden:
+            return forbidden
+
+        try:
+            submission = EstatePlanningSubmission.objects.get(pk=pk)
+        except EstatePlanningSubmission.DoesNotExist:
+            return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        submission.delete()
+        return Response(
+            status=status.HTTP_204_NO_CONTENT
+            )
