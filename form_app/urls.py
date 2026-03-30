@@ -8,6 +8,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 router = DefaultRouter()
 router.register(r'submissions', views.TaxFormSubmissionViewSet, basename='taxformsubmission')
 router.register(r'estate-planning', views.EstatePlanningViewSet, basename='estate-planning')
+router.register(r'staff-estate-planning', views.StaffEstatePlanningViewSet, basename='staff-estate-planning')
 
 urlpatterns = [
     path('tax-forms/', include(router.urls)),
