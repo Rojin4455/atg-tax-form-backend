@@ -1299,10 +1299,15 @@ class AdminUserFormsView(generics.GenericAPIView):
             except TaxEngagementLetter.DoesNotExist:
                 pass
         
-        # Add engagement letter to response
+        # Add engagement letter and client onboard flag to response
         response_data = forms_by_type.copy()
         response_data['engagement_letter'] = engagement_letter
-        
+        response_data['onboard_required'] = (
+            getattr(user.userprofile, 'onboard_required', True)
+            if hasattr(user, 'userprofile')
+            else True
+        )
+
         return Response(response_data, status=status.HTTP_200_OK)
 
 
