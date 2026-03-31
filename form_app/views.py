@@ -1118,7 +1118,11 @@ class AdminUserListView(generics.ListAPIView):
             rental_submitted_count=Count('surveysubmission', filter=Q(surveysubmission__status='submitted', surveysubmission__form_type__iexact='rental')),
             flip_draft_count=Count('surveysubmission', filter=Q(surveysubmission__status='drafted', surveysubmission__form_type__iexact='flip')),
             flip_submitted_count=Count('surveysubmission', filter=Q(surveysubmission__status='submitted', surveysubmission__form_type__iexact='flip')),
-            annotated_engagement_letter_count=Count('taxengagementletter')
+            annotated_engagement_letter_count=Count('taxengagementletter'),
+            annotated_estate_submitted_count=Count(
+                'estate_submissions',
+                filter=Q(estate_submissions__status='submitted'),
+            ),
         )
         
         # Search functionality

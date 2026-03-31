@@ -453,10 +453,15 @@ class UserProfileSerializer(serializers.ModelSerializer):
     profile = serializers.SerializerMethodField()
     forms_count = serializers.SerializerMethodField()
     engagement_letter_signed = serializers.SerializerMethodField()
+    estate_submitted_once = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'date_joined', 'is_active', 'is_staff', 'is_superuser', 'profile', 'forms_count', 'engagement_letter_signed')
+        fields = (
+            'id', 'username', 'email', 'first_name', 'last_name', 'date_joined',
+            'is_active', 'is_staff', 'is_superuser', 'profile', 'forms_count',
+            'engagement_letter_signed', 'estate_submitted_once',
+        )
         read_only_fields = ('id', 'username', 'date_joined')
     
     def get_engagement_letter_signed(self, obj):
@@ -465,6 +470,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         if hasattr(obj, '_prefetched_objects_cache') and 'taxengagementletter_set' in obj._prefetched_objects_cache:
             return len(obj.taxengagementletter_set.all()) > 0
         return obj.taxengagementletter_set.exists()
+
+    def get_estate_submitted_once(self, obj):
+        if hasattr(obj, 'annotated_estate_submitted_count'):
+            return obj.annotated_estate_submitted_count > 0
+        return obj.estate_submissions.filter(status='submitted').exists()
     
     def get_forms_count(self, obj):
         counts = {
