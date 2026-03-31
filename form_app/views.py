@@ -1971,9 +1971,9 @@ class EstatePlanningViewSet(viewsets.ViewSet):
     """
     Estate planning form — auto-save + submit.
 
-    GET    /estate-planning/              → get or create the user's draft
-    PATCH  /estate-planning/{id}/        → auto-save (partial update)
-    POST   /estate-planning/{id}/submit/ → finalise draft → submitted
+    GET    /estate-planning/              → user's single questionnaire (draft or submitted)
+    PATCH  /estate-planning/{id}/        → auto-save (works for draft or submitted)
+    POST   /estate-planning/{id}/submit/ → draft → submitted (idempotent if already submitted)
     GET    /estate-planning/history/     → all submitted records for the user
     """
     permission_classes = [IsAuthenticated]
@@ -1983,17 +1983,29 @@ class EstatePlanningViewSet(viewsets.ViewSet):
 
     # ── GET /estate-planning/ ─────────────────────────────────────────────────
     def list(self, request):
-        """Return the user's current draft, creating one if none exists."""
-        draft, created = EstatePlanningSubmission.objects.get_or_create(
-            user=request.user,
-            status=EstatePlanningSubmission.STATUS_DRAFT,
+        """
+        Return the user's estate planning row (draft or submitted).
+
+        Uses the most recently updated row so after submit the same record is loaded for
+        further edits. Creates a draft only when the user has no rows yet (never creates a
+        second draft while a submitted row exists).
+        """
+        submission = (
+            EstatePlanningSubmission.objects.filter(user=request.user)
+            .order_by('-updated_at')
+            .first()
         )
-        serializer = self._get_serializer(request, draft)
+        if submission is None:
+            submission = EstatePlanningSubmission.objects.create(
+                user=request.user,
+                status=EstatePlanningSubmission.STATUS_DRAFT,
+            )
+        serializer = self._get_serializer(request, submission)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     # ── PATCH /estate-planning/{id}/ ──────────────────────────────────────────
     def partial_update(self, request, pk=None):
-        """Auto-save: update any subset of step fields + current_step."""
+        """Auto-save: update any subset of step fields + current_step (draft or submitted)."""
         try:
             submission = EstatePlanningSubmission.objects.get(pk=pk)
         except EstatePlanningSubmission.DoesNotExist:
@@ -2011,20 +2023,31 @@ class EstatePlanningViewSet(viewsets.ViewSet):
     # ── POST /estate-planning/{id}/submit/ ────────────────────────────────────
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):
-        """Finalise the draft: status → submitted, records submitted_at."""
+        """
+        Draft → submitted (sets submitted_at on first submit). If already submitted, no-op 200.
+
+        After the first successful submit, deletes any other rows for this user so only one
+        submission exists going forward (covers legacy duplicates / stray drafts).
+        """
         try:
-            submission = EstatePlanningSubmission.objects.get(
-                pk=pk, user=request.user, status=EstatePlanningSubmission.STATUS_DRAFT
-            )
+            submission = EstatePlanningSubmission.objects.get(pk=pk, user=request.user)
         except EstatePlanningSubmission.DoesNotExist:
             return Response(
-                {'error': 'Draft not found or already submitted.'},
+                {'error': 'Not found.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        submission.status = EstatePlanningSubmission.STATUS_SUBMITTED
-        submission.submitted_at = timezone.now()
-        submission.save(update_fields=['status', 'submitted_at', 'updated_at'])
+        if submission.status == EstatePlanningSubmission.STATUS_SUBMITTED:
+            serializer = self._get_serializer(request, submission)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        with transaction.atomic():
+            submission.status = EstatePlanningSubmission.STATUS_SUBMITTED
+            submission.submitted_at = timezone.now()
+            submission.save(update_fields=['status', 'submitted_at', 'updated_at'])
+            EstatePlanningSubmission.objects.filter(user=request.user).exclude(
+                pk=submission.pk
+            ).delete()
 
         serializer = self._get_serializer(request, submission)
         return Response(serializer.data, status=status.HTTP_200_OK)
