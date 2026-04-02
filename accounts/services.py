@@ -936,3 +936,35 @@ class GHLContactServices:
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to upload file for entity {entity_id}: {e}")
             raise Exception(f"API request failed for file upload: {e}")
+
+
+class GHLCalendarServices:
+    """Services for GHL calendar APIs."""
+
+    def __init__(self, access_token: str):
+        self.access_token = access_token
+        self.base_url = GHL_BASE_URL
+        self.headers = get_ghl_headers(self.access_token).copy()
+        # Calendar notifications endpoint requires this API version.
+        self.headers["Version"] = "2021-04-15"
+
+    def create_notifications(self, calendar_id: str, notifications: list[dict]) -> dict:
+        """
+        Create calendar notifications in GHL.
+
+        Endpoint:
+            POST /calendars/{calendarId}/notifications
+        """
+        if not calendar_id:
+            raise ValueError("calendar_id is required.")
+        if not isinstance(notifications, list):
+            raise ValueError("notifications payload must be a list.")
+
+        url = f"{self.base_url}/calendars/{calendar_id}/notifications"
+        try:
+            response = requests.post(url, headers=self.headers, json=notifications)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to create calendar notifications for {calendar_id}: {e}")
+            raise Exception(f"API request failed for creating calendar notifications: {e}")

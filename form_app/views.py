@@ -2041,17 +2041,45 @@ class EstatePlanningViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        def _push_estate_submission_note():
+            """Best-effort GHL note when user submits estate planning."""
+            try:
+                if not hasattr(request.user, 'userprofile'):
+                    return
+                ghl_contact_id = getattr(request.user.userprofile, 'ghl_contact_id', None)
+                if not ghl_contact_id:
+                    return
+
+                cred = GHLAuthCredentials.objects.first()
+                if not cred or not cred.access_token:
+                    return
+
+                ghl_service = GHLContactServices(cred.access_token, cred.location_id)
+                submitted_at_str = timezone.now().strftime("%Y-%m-%d %H:%M:%S %Z")
+                note_body = f"Estate Planning Questionnaire submitted.\n{submitted_at_str}"
+                ghl_service.create_note(ghl_contact_id, user_id=cred.location_id, body=note_body)
+            except Exception as e:
+                logger.warning(f"Failed to create GHL estate submission note: {e}")
+
         if submission.status == EstatePlanningSubmission.STATUS_SUBMITTED:
+            if submission.current_step != 1:
+                submission.current_step = 1
+                submission.save(update_fields=['current_step', 'updated_at'])
+            _push_estate_submission_note()
             serializer = self._get_serializer(request, submission)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         with transaction.atomic():
             submission.status = EstatePlanningSubmission.STATUS_SUBMITTED
+            submission.current_step = 1
             submission.submitted_at = timezone.now()
-            submission.save(update_fields=['status', 'submitted_at', 'updated_at'])
+            submission.save(update_fields=[
+                'status', 'current_step', 'submitted_at', 'updated_at'
+                ])
             EstatePlanningSubmission.objects.filter(user=request.user).exclude(
                 pk=submission.pk
             ).delete()
+        _push_estate_submission_note()
 
         serializer = self._get_serializer(request, submission)
         return Response(serializer.data, status=status.HTTP_200_OK)
