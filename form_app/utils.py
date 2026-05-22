@@ -1,5 +1,29 @@
+from urllib.parse import urlparse
+
+from decouple import config
+
 from .models import UserProfile
 from typing import Protocol, Dict, Any, Union, List, Tuple, Optional
+
+
+def get_frontend_base_url_from_request(request, *, env_fallback_key='TRUST_FRONTEND_BASE_URL', default='http://localhost:8081'):
+    """
+    Resolve the trust/estate frontend origin from the incoming request.
+
+    Uses HTTP_ORIGIN, then HTTP_REFERER (scheme + host only). Falls back to env
+    TRUST_FRONTEND_BASE_URL, then FRONTEND_BASE_URL, then default.
+    """
+    origin = (request.META.get('HTTP_ORIGIN') or request.META.get('HTTP_REFERER') or '').strip()
+    if origin:
+        parsed = urlparse(origin)
+        if parsed.scheme and parsed.netloc:
+            return f'{parsed.scheme}://{parsed.netloc}'.rstrip('/')
+        return origin.rstrip('/')
+
+    fallback = config(env_fallback_key, default='')
+    if fallback:
+        return str(fallback).rstrip('/')
+    return config('FRONTEND_BASE_URL', default=default).rstrip('/')
 
 
 def get_client_ip(request):

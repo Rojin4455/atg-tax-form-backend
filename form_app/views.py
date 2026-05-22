@@ -27,7 +27,7 @@ from django.utils.timezone import is_aware, make_aware
 
 from accounts.models import GHLAuthCredentials
 from accounts.services import GHLContactServices
-from .utils import GHLCustomFields, get_ghl_file_upload_adapter
+from .utils import GHLCustomFields, get_ghl_file_upload_adapter, get_frontend_base_url_from_request
 from .serializers import (
     TaxFormSubmissionSerializer, TaxFormSubmissionCreateSerializer,
     UserSignupSerializer, 
@@ -1976,11 +1976,16 @@ class EstatePlanningViewSet(viewsets.ViewSet):
     Estate planning form — auto-save + submit.
 
     GET    /estate-planning/              → user's single questionnaire (draft or submitted)
+    GET    /estate-planning/{id}/        → single submission by UUID (public, no auth)
     PATCH  /estate-planning/{id}/        → auto-save (works for draft or submitted)
     POST   /estate-planning/{id}/submit/ → draft → submitted (idempotent if already submitted)
     GET    /estate-planning/history/     → all submitted records for the user
     """
-    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action == 'retrieve':
+            return [AllowAny()]
+        return [IsAuthenticated()]
 
     def _get_serializer(self, request, *args, **kwargs):
         return EstatePlanningSubmissionSerializer(*args, **kwargs)
@@ -2004,6 +2009,21 @@ class EstatePlanningViewSet(viewsets.ViewSet):
                 user=request.user,
                 status=EstatePlanningSubmission.STATUS_DRAFT,
             )
+        serializer = self._get_serializer(request, submission)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # ── GET /estate-planning/{id}/ ────────────────────────────────────────────
+    def retrieve(self, request, pk=None):
+        """
+        Return one estate planning submission by id.
+
+        Public shareable link — no authentication required (UUID is the secret).
+        """
+        try:
+            submission = EstatePlanningSubmission.objects.get(pk=pk)
+        except EstatePlanningSubmission.DoesNotExist:
+            return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+
         serializer = self._get_serializer(request, submission)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -2056,7 +2076,13 @@ class EstatePlanningViewSet(viewsets.ViewSet):
 
                 ghl_service = GHLContactServices(cred.access_token, cred.location_id)
                 submitted_at_str = timezone.now().strftime("%Y-%m-%d %H:%M:%S %Z")
-                note_body = f"Estate Planning Questionnaire submitted.\n{submitted_at_str}"
+                frontend_base = get_frontend_base_url_from_request(request)
+                submission_url = f"{frontend_base}/submission/{submission.pk}"
+                note_body = (
+                    f"Estate Planning Questionnaire submitted.\n"
+                    f"{submitted_at_str}\n"
+                    f"Submission URL: {submission_url}"
+                )
                 ghl_service.create_note(ghl_contact_id, user_id=cred.location_id, body=note_body)
             except Exception as e:
                 logger.warning(f"Failed to create GHL estate submission note: {e}")
