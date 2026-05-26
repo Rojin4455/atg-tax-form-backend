@@ -1118,6 +1118,8 @@ class AdminUserListView(generics.ListAPIView):
             rental_submitted_count=Count('surveysubmission', filter=Q(surveysubmission__status='submitted', surveysubmission__form_type__iexact='rental')),
             flip_draft_count=Count('surveysubmission', filter=Q(surveysubmission__status='drafted', surveysubmission__form_type__iexact='flip')),
             flip_submitted_count=Count('surveysubmission', filter=Q(surveysubmission__status='submitted', surveysubmission__form_type__iexact='flip')),
+            installment_sale_draft_count=Count('surveysubmission', filter=Q(surveysubmission__status='drafted', surveysubmission__form_type__iexact='installment_sale')),
+            installment_sale_submitted_count=Count('surveysubmission', filter=Q(surveysubmission__status='submitted', surveysubmission__form_type__iexact='installment_sale')),
             annotated_engagement_letter_count=Count('taxengagementletter'),
             annotated_estate_submitted_count=Count(
                 'estate_submissions',
@@ -1275,6 +1277,7 @@ class AdminUserFormsView(generics.GenericAPIView):
             'business': [],
             'rental': [],
             'flip': [],
+            'installment_sale': [],
         }
         
         for submission in submissions:
@@ -1288,6 +1291,8 @@ class AdminUserFormsView(generics.GenericAPIView):
             if form_type_key == 'rental' and not permissions.get('can_view_rental_organizer', False) and not permissions.get('is_super_admin', False):
                 continue
             if form_type_key == 'flip' and not permissions.get('can_view_flip_organizer', False) and not permissions.get('is_super_admin', False):
+                continue
+            if form_type_key == 'installment_sale' and not permissions.get('can_view_installment_sale_organizer', False) and not permissions.get('is_super_admin', False):
                 continue
             
             if form_type_key in forms_by_type:
@@ -1568,6 +1573,7 @@ def get_user_permissions(user):
             'can_view_business_organizer': profile.can_view_business_organizer,
             'can_view_rental_organizer': profile.can_view_rental_organizer,
             'can_view_flip_organizer': profile.can_view_flip_organizer,
+            'can_view_installment_sale_organizer': profile.can_view_installment_sale_organizer,
             'can_view_engagement_letter': profile.can_view_engagement_letter,
         }
     except UserProfile.DoesNotExist:
@@ -1579,6 +1585,7 @@ def get_user_permissions(user):
             'can_view_business_organizer': False,
             'can_view_rental_organizer': False,
             'can_view_flip_organizer': False,
+            'can_view_installment_sale_organizer': False,
             'can_view_engagement_letter': False,
         }
 
@@ -1633,6 +1640,7 @@ class CreateAdminView(generics.GenericAPIView):
         profile.can_view_business_organizer = serializer.validated_data.get('can_view_business_organizer', False)
         profile.can_view_rental_organizer = serializer.validated_data.get('can_view_rental_organizer', False)
         profile.can_view_flip_organizer = serializer.validated_data.get('can_view_flip_organizer', False)
+        profile.can_view_installment_sale_organizer = serializer.validated_data.get('can_view_installment_sale_organizer', False)
         profile.can_view_engagement_letter = serializer.validated_data.get('can_view_engagement_letter', False)
         profile.save()
         

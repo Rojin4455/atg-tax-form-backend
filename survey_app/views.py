@@ -125,6 +125,8 @@ class SurveySubmissionCreateView(APIView):
                     add_ghl_contact_tag(submission_owner, "rental form submitted for pipeline")
                 elif form_type == 'flip':
                     add_ghl_contact_tag(submission_owner, "flip form submitted for pipeline")
+                elif form_type == 'installment_sale':
+                    add_ghl_contact_tag(submission_owner, "installment sale form submitted for pipeline")
                 add_ghl_submission_note(submission_owner, form_type, submission.id, timezone.now(), submission_data=submission_data)
             
             return Response({"id": submission.id}, status=status.HTTP_201_CREATED)
@@ -265,6 +267,8 @@ class SurveySubmissionDetailView(APIView):
                 add_ghl_contact_tag(submission_owner, "rental form submitted for pipeline")
             elif form_type == 'flip':
                 add_ghl_contact_tag(submission_owner, "flip form submitted for pipeline")
+            elif form_type == 'installment_sale':
+                add_ghl_contact_tag(submission_owner, "installment sale form submitted for pipeline")
             add_ghl_submission_note(submission_owner, submission.form_type, submission.id, timezone.now(), submission_data=submission.submission_data)
         
         return Response({"message": "Submission updated"}, status=status.HTTP_200_OK)
@@ -330,6 +334,8 @@ class FormSubmissionsListView(APIView):
         valid_form_types = list(dict(SurveySubmission.FORM_TYPES).keys())
         if 'flip' not in valid_form_types:
             valid_form_types.append('flip')
+        if 'installment_sale' not in valid_form_types:
+            valid_form_types.append('installment_sale')
         if form_type and form_type in valid_form_types:
             submissions = submissions.filter(form_type=form_type)
         submissions = submissions.order_by('-submitted_at')

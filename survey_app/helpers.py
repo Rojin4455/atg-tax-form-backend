@@ -71,13 +71,15 @@ def update_ghl_contact_tags_and_links(user, form_type=None, status=None, form_id
             "personal": "tMVGgl6hCjaZH9V1nIec",
             "business": "WUfba2ft47FUmB5nLIbJ",
             "rental": "QCyDdzWXmNtUJ4gauM2f",
-            "flip": ""  # Add GHL custom field ID when created
+            "flip": "",  # Add GHL custom field ID when created
+            "installment_sale": "",  # Add GHL custom field ID when created
         }
         FORM_PDF_FIELD_IDS = {
             "personal": "0KNK08rbVnK3VOgN0QMw",
             "business": "vMAxcikxmYHhEqUX7Q0J",  # Update when created
             "rental": "0u5IVof2PwxJpLDbtayd",     # Update when created
-            "flip": ""  # Add GHL custom field ID when created
+            "flip": "",  # Add GHL custom field ID when created
+            "installment_sale": "",  # Add GHL custom field ID when created
         }
 
         link_field_id = FORM_LINK_FIELD_IDS.get(form_type)
@@ -507,6 +509,7 @@ def add_ghl_submission_note(user, form_type, submission_id, submitted_at, submis
             "business": "Business Tax Organizer",
             "rental": "Rental Property Organizer",
             "flip": "Flip Organizer",
+            "installment_sale": "Installment Sale Organizer",
         }
         label = organizer_labels.get(form_type, form_type.replace("_", " ").title())
         date_str = submitted_at.strftime("%m/%d/%Y") if submitted_at else ""

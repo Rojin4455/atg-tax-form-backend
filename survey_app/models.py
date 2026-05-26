@@ -9,6 +9,7 @@ class SurveySubmission(models.Model):
         ('business', 'Business'),
         ('rental', 'Rental'),
         ('flip', 'Flip'),
+        ('installment_sale', 'Installment Sale'),
     )
     STATUS_TYPES = (
         ('drafted', 'Drafted'),

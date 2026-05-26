@@ -482,6 +482,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'business': {'draft': 0, 'submitted': 0},
             'rental': {'draft': 0, 'submitted': 0},
             'flip': {'draft': 0, 'submitted': 0},
+            'installment_sale': {'draft': 0, 'submitted': 0},
         }
         
         if hasattr(obj, 'personal_draft_count'):
@@ -493,6 +494,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
             counts['rental']['submitted'] = obj.rental_submitted_count
             counts['flip']['draft'] = obj.flip_draft_count
             counts['flip']['submitted'] = obj.flip_submitted_count
+            counts['installment_sale']['draft'] = obj.installment_sale_draft_count
+            counts['installment_sale']['submitted'] = obj.installment_sale_submitted_count
             return counts
             
         if hasattr(obj, '_prefetched_objects_cache') and 'surveysubmission_set' in obj._prefetched_objects_cache:
@@ -523,6 +526,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
                 'can_view_business_organizer': profile.can_view_business_organizer,
                 'can_view_rental_organizer': profile.can_view_rental_organizer,
                 'can_view_flip_organizer': profile.can_view_flip_organizer,
+                'can_view_installment_sale_organizer': profile.can_view_installment_sale_organizer,
                 'can_view_engagement_letter': profile.can_view_engagement_letter,
             }
         except:
@@ -548,7 +552,8 @@ class AdminProfileSerializer(serializers.ModelSerializer):
             'is_admin', 'is_super_admin',
             'can_list_users', 'can_view_personal_organizer', 
             'can_view_business_organizer', 'can_view_rental_organizer',
-            'can_view_flip_organizer', 'can_view_engagement_letter', 'created_at', 'updated_at'
+            'can_view_flip_organizer', 'can_view_installment_sale_organizer',
+            'can_view_engagement_letter', 'created_at', 'updated_at'
         )
         read_only_fields = ('created_at', 'updated_at')
 
@@ -562,6 +567,7 @@ class CreateAdminSerializer(serializers.Serializer):
     can_view_business_organizer = serializers.BooleanField(default=False)
     can_view_rental_organizer = serializers.BooleanField(default=False)
     can_view_flip_organizer = serializers.BooleanField(default=False)
+    can_view_installment_sale_organizer = serializers.BooleanField(default=False)
     can_view_engagement_letter = serializers.BooleanField(default=False)
     
     def validate_user_id(self, value):
@@ -583,6 +589,7 @@ class UpdateAdminPermissionsSerializer(serializers.Serializer):
     can_view_business_organizer = serializers.BooleanField(required=False)
     can_view_rental_organizer = serializers.BooleanField(required=False)
     can_view_flip_organizer = serializers.BooleanField(required=False)
+    can_view_installment_sale_organizer = serializers.BooleanField(required=False)
     can_view_engagement_letter = serializers.BooleanField(required=False)
 
 

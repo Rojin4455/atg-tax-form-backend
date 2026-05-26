@@ -366,6 +366,7 @@ class UserProfile(models.Model):
     can_view_business_organizer = models.BooleanField(default=False, help_text="Permission to view business organizer data")
     can_view_rental_organizer = models.BooleanField(default=False, help_text="Permission to view rental organizer data")
     can_view_flip_organizer = models.BooleanField(default=False, help_text="Permission to view flip organizer data")
+    can_view_installment_sale_organizer = models.BooleanField(default=False, help_text="Permission to view installment sale organizer data")
     can_view_engagement_letter = models.BooleanField(default=False, help_text="Permission to view engagement letter data")
     
     created_at = models.DateTimeField(auto_now_add=True)
