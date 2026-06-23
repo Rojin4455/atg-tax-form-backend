@@ -994,7 +994,8 @@ class UserSignupView(generics.CreateAPIView):
                 'email': user.email,
                 'first_name': user.first_name,
                 'last_name': user.last_name,
-                'onboard_required': getattr(user.userprofile, 'onboard_required', True) if hasattr(user, 'userprofile') else True
+                'role': 'user',
+                'onboard_required': user.userprofile.onboard_required if hasattr(user, 'userprofile') else True
             },
             'tokens': tokens
         }, status=status.HTTP_201_CREATED)
@@ -1024,7 +1025,7 @@ class UserLoginView(generics.GenericAPIView):
                 'last_name': user.last_name,
                 'is_staff': user.is_staff,
                 'is_superuser': user.is_superuser,
-                'onboard_required': getattr(user.userprofile, 'onboard_required', True) if hasattr(user, 'userprofile') else True
+                'onboard_required': user.userprofile.onboard_required if hasattr(user, 'userprofile') else True
             },
             'permissions': permissions,
             'tokens': tokens
@@ -1312,7 +1313,7 @@ class AdminUserFormsView(generics.GenericAPIView):
         response_data = forms_by_type.copy()
         response_data['engagement_letter'] = engagement_letter
         response_data['onboard_required'] = (
-            getattr(user.userprofile, 'onboard_required', True)
+            user.userprofile.onboard_required
             if hasattr(user, 'userprofile')
             else True
         )
@@ -1825,6 +1826,9 @@ class ClientProfileView(generics.GenericAPIView):
             except (UserProfile.DoesNotExist, ClientProfile.DoesNotExist):
                 return Response({'detail': 'Profile not found.'}, status=status.HTTP_404_NOT_FOUND)
         else:
+            from .utils import get_or_create_ghl_contact
+            get_or_create_ghl_contact(request.user)
+
             try:
                 profile = request.user.client_profile
             except ClientProfile.DoesNotExist:
@@ -1867,7 +1871,9 @@ class ClientProfileView(generics.GenericAPIView):
                     }
                 )
 
-                ghl_contact_id = getattr(user.userprofile, 'ghl_contact_id', None)
+                from .utils import get_or_create_ghl_contact
+                ghl_contact_id = get_or_create_ghl_contact(user)
+
                 cred = None
                 ghl_service = None
 
@@ -1944,9 +1950,8 @@ class ClientProfileView(generics.GenericAPIView):
                     })
 
                 # ── Mark onboarding complete ───────────────────────────────────
-                if hasattr(user, 'userprofile'):
-                    user.userprofile.onboard_required = False
-                    user.userprofile.save()
+                user.userprofile.onboard_required = False
+                user.userprofile.save()
 
                 # ── Push note to GHL ───────────────────────────────────────────
                 if ghl_contact_id and cred and cred.access_token and ghl_service:
@@ -2072,9 +2077,8 @@ class EstatePlanningViewSet(viewsets.ViewSet):
         def _push_estate_submission_note():
             """Best-effort GHL note when user submits estate planning."""
             try:
-                if not hasattr(request.user, 'userprofile'):
-                    return
-                ghl_contact_id = getattr(request.user.userprofile, 'ghl_contact_id', None)
+                from .utils import get_or_create_ghl_contact
+                ghl_contact_id = get_or_create_ghl_contact(request.user)
                 if not ghl_contact_id:
                     return
 

@@ -15,8 +15,8 @@ def update_ghl_contact_tags_and_links(user, form_type=None, status=None, form_id
         print(f"[DEBUG] PDF data provided: {bool(pdf_data)}")
 
         # --- Get GHL contact ID ---
-        profile = UserProfile.objects.get(user=user)
-        ghl_contact_id = profile.ghl_contact_id
+        from form_app.utils import get_or_create_ghl_contact
+        ghl_contact_id = get_or_create_ghl_contact(user)
         print(f"[DEBUG] GHL Contact ID: {ghl_contact_id}")
         if not ghl_contact_id:
             print("[DEBUG] No GHL contact ID found — aborting")
@@ -246,11 +246,10 @@ def upload_tax_engagement_pdf_to_ghl(user, pdf_data):
             return
 
         # Fetch GHL Contact ID
-        try:
-            profile = UserProfile.objects.get(user=user)
-            ghl_contact_id = profile.ghl_contact_id
-        except UserProfile.DoesNotExist:
-            print("[TAX_PDF] UserProfile not found")
+        from form_app.utils import get_or_create_ghl_contact
+        ghl_contact_id = get_or_create_ghl_contact(user)
+        if not ghl_contact_id:
+            print("[TAX_PDF] Failed to resolve GHL contact ID")
             return
 
         if not ghl_contact_id:
@@ -490,8 +489,8 @@ def add_ghl_submission_note(user, form_type, submission_id, submitted_at, submis
     For business form only: appends " - EIN: XX-XXXXXXX" when submission_data contains basicInfo.ein.
     """
     try:
-        profile = UserProfile.objects.get(user=user)
-        ghl_contact_id = profile.ghl_contact_id
+        from form_app.utils import get_or_create_ghl_contact
+        ghl_contact_id = get_or_create_ghl_contact(user)
         if not ghl_contact_id:
             print("[GHL_NOTE] No GHL contact ID found — skipping note")
             return False
@@ -563,8 +562,8 @@ def add_ghl_engagement_letter_note(user, date_signed):
     Note body format: "Tax Engagement Letter – Signed: MM/DD/YYYY"
     """
     try:
-        profile = UserProfile.objects.get(user=user)
-        ghl_contact_id = profile.ghl_contact_id
+        from form_app.utils import get_or_create_ghl_contact
+        ghl_contact_id = get_or_create_ghl_contact(user)
         if not ghl_contact_id:
             print("[GHL_NOTE] No GHL contact ID found — skipping engagement letter note")
             return False
@@ -614,8 +613,8 @@ def add_ghl_contact_tag(user, tag_name):
     """
     try:
         # Get GHL contact ID from user profile
-        profile = UserProfile.objects.get(user=user)
-        ghl_contact_id = profile.ghl_contact_id
+        from form_app.utils import get_or_create_ghl_contact
+        ghl_contact_id = get_or_create_ghl_contact(user)
         
         if not ghl_contact_id:
             print(f"[TAG] No GHL contact ID found for user {user.email} — aborting")

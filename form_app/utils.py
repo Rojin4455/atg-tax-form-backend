@@ -137,19 +137,101 @@ def get_ghl_file_upload_adapter(use_media_upload: bool = False) -> GHLFileUpload
         return MediaFileUploadHandler()
     return CustomFieldFileUploadHandler()
 
-def create_or_update_user_profile(instance):
+def get_or_create_ghl_contact(user):
     """
-    Create profile when user is created, and also update ghl_contact_id if available.
-
+    Ensures the user has a UserProfile.
+    If the UserProfile lacks a ghl_contact_id, query the GHL API by email using advanced search.
+    If a contact is found in GHL, save and return the ghl_contact_id.
+    If not found, create a contact in GHL, save and return the ghl_contact_id.
     """
-    print("reached herererere:``` ")
+    import logging
+    import requests
+    from accounts.models import GHLAuthCredentials
+    
+    logger = logging.getLogger(__name__)
 
-    profile, _ = UserProfile.objects.get_or_create(user=instance)
-
-    print("reached herererere: ", profile)
-
-    # If we have a GHL contact ID from signup view, save it
-    ghl_contact_id = getattr(instance, "_ghl_contact_id", None)
-    if ghl_contact_id:
-        profile.ghl_contact_id = ghl_contact_id
+    profile, created = UserProfile.objects.get_or_create(user=user)
+    
+    # If we already have the GHL ID stored or temporarily attached, use it
+    if profile.ghl_contact_id:
+        return profile.ghl_contact_id
+    if getattr(user, "_ghl_contact_id", None):
+        profile.ghl_contact_id = user._ghl_contact_id
         profile.save()
+        return profile.ghl_contact_id
+
+    # If ghl_contact_id is empty, resolve it from GHL
+    try:
+        token = GHLAuthCredentials.objects.get(location_id='3zdgsEJTjNPONjCuEzbx')
+    except GHLAuthCredentials.DoesNotExist:
+        token = GHLAuthCredentials.objects.first()
+
+    if not token or not token.access_token:
+        logger.warning(f"No GHL credentials found to resolve contact for user {user.email}")
+        return None
+
+    ghl_token = token.access_token
+    location_id = token.location_id
+    headers = {
+        'Authorization': f'Bearer {ghl_token}',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Version': '2021-07-28',
+    }
+
+    # 1. Search if contact exists in GHL by email using advanced search POST API
+    search_url = "https://services.leadconnectorhq.com/contacts/search"
+    search_payload = {
+        "locationId": location_id,
+        "pageLimit": 10,
+        "filters": [
+            {
+                "field": "email",
+                "operator": "eq",
+                "value": user.email
+            }
+        ]
+    }
+    
+    try:
+        response = requests.post(search_url, json=search_payload, headers=headers)
+        if response.status_code == 200 and response.json().get("contacts"):
+            contact_id = response.json()["contacts"][0]["id"]
+            profile.ghl_contact_id = contact_id
+            profile.save()
+
+            # Update basic details in GHL to make sure it's in sync
+            update_url = f"https://services.leadconnectorhq.com/contacts/{contact_id}"
+            update_data = {
+                "email": user.email,
+                "firstName": user.first_name or "",
+                "lastName": user.last_name or "",
+                "customFields": [
+                    {"id": "QmI5yIMWYdY17ijOr4ta", "field_value": user.username},
+                ],
+            }
+            requests.put(update_url, json=update_data, headers=headers)
+            return contact_id
+        else:
+            # 2. Contact does not exist — Create it in GHL
+            create_url = "https://services.leadconnectorhq.com/contacts/"
+            create_data = {
+                "email": user.email,
+                "firstName": user.first_name or "",
+                "lastName": user.last_name or "",
+                "locationId": location_id,
+                "customFields": [
+                    {"id": "QmI5yIMWYdY17ijOr4ta", "field_value": user.username},
+                ],
+            }
+            create_res = requests.post(create_url, json=create_data, headers=headers)
+            if create_res.status_code in (200, 201):
+                contact_id = create_res.json().get("contact", {}).get("id")
+                if contact_id:
+                    profile.ghl_contact_id = contact_id
+                    profile.save()
+                    return contact_id
+    except Exception as e:
+        logger.error(f"Error resolving/creating GHL contact for user {user.email}: {e}")
+
+    return None
