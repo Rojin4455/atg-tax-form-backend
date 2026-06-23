@@ -43,7 +43,7 @@ from .serializers import (
     ResetAdminPasswordSerializer,
     ClientProfileDetailSerializer,
 )
-from .utils import get_client_ip,create_or_update_user_profile
+from .utils import get_client_ip, get_or_create_ghl_contact
 from survey_app.helpers import add_ghl_contact_tag
 import logging
 from django.core.cache import cache
@@ -981,7 +981,7 @@ class UserSignupView(generics.CreateAPIView):
         # Temporarily attach the ghl_contact_id to the user instance
         user._ghl_contact_id = ghl_contact_id
 
-        create_or_update_user_profile(user)
+        get_or_create_ghl_contact(user)
 
         # Add "tax toolbox created" tag to GHL contact
         add_ghl_contact_tag(user, "tax toolbox created")
